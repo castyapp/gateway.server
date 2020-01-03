@@ -1,0 +1,25 @@
+syntax = "proto3";
+package enums;
+
+enum EMSG_PERSONAL_STATE {
+    OFFLINE    = 0;
+    ONLINE     = 1;
+    IDLE       = 2;
+    BUSY       = 3;
+    INVISIBLE  = 4;
+}
+
+enum EMSG {
+    INVALID                    = 0;
+    LOGON                      = 1;
+    LOGOUT                     = 2;
+    CHAT_MESSAGE               = 3;
+    THEATER_ONLINE_USERS       = 4;
+    THEATER_UPDATE_USER        = 5;
+    PERSONAL_STATE_CHANGED     = 6;
+    PERSONAL_ACTIVITY_CHANGED  = 7;
+    THEATER_LOGON              = 8;
+    THEATER_LOGOUT             = 9;
+    AUTHORIZED                 = 10;
+    NEW_CHAT_MESSAGE           = 11;
+}

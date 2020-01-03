@@ -1,0 +1,49 @@
+syntax = "proto3";
+package protobuf;
+
+import "google/protobuf/timestamp.proto";
+import "enums/enums.proto";
+
+message CMsgProtoBufHeader {
+    bytes UserHash        = 1;
+    bytes IpAddr          = 2;
+    int32 SessionClientId = 3;
+    bytes AuthToken       = 4;
+}
+
+message PersonalStateMsgEvent {
+    string                         user_id   = 1;
+    enums.EMSG_PERSONAL_STATE      state     = 2;
+    PersonalStateActivityMsgEvent  activity  = 3;
+}
+
+message ChatMsgEvent {
+    bytes   message = 1;
+    string  from    = 2;
+    string  to      = 3;
+    repeated uint64 emojies  = 4;
+    repeated uint64 mentions = 5;
+    google.protobuf.Timestamp created_at = 6;
+}
+
+message PersonalStateActivityMsgEvent {
+    int64  activity_id    = 1;
+    bytes  activity_text  = 2;
+}
+
+message TheaterLogOnEvent {
+    bytes room  = 1;
+    bytes token = 2;
+}
+
+message LogOnEvent {
+    bytes username = 1;
+    bytes password = 2;
+    bytes token = 3;
+}
+
+message MsgEvent {
+    enums.EMSG  type = 1;
+    bytes       data = 2;
+    google.protobuf.Timestamp created_at = 3;
+}
