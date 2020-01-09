@@ -66,6 +66,12 @@ func (r *TheaterRoom) Join(client *Client) {
 
 func (r *TheaterRoom) updateUserActivity(client *Client) {
 	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+	_, _ = grpc.TheaterServiceClient.AddMember(mCtx, &proto.AddOrRemoveMemberRequest{
+		TheaterId: r.theater.Id,
+		AuthRequest: &proto.AuthenticateRequest{
+			Token: []byte(client.AuthToken),
+		},
+	})
 	_, _ = grpc.UserServiceClient.UpdateActivity(mCtx, &proto.UpdateActivityRequest{
 		Activity: &messages.Activity{
 			Id:       r.theater.Id,
@@ -79,6 +85,12 @@ func (r *TheaterRoom) updateUserActivity(client *Client) {
 
 func (r *TheaterRoom) removeUserActivity(client *Client) {
 	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+	_, _ = grpc.TheaterServiceClient.RemoveMember(mCtx, &proto.AddOrRemoveMemberRequest{
+		TheaterId: r.theater.Id,
+		AuthRequest: &proto.AuthenticateRequest{
+			Token: []byte(client.AuthToken),
+		},
+	})
 	_, _ = grpc.UserServiceClient.RemoveActivity(mCtx, &proto.AuthenticateRequest{
 		Token: []byte(client.AuthToken),
 	})
