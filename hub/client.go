@@ -40,6 +40,7 @@ type Client struct {
 	authenticated   bool
 	room            Room
 	State           State
+	AuthToken       string
 }
 
 func (c *Client) GetUser() *messages.User {

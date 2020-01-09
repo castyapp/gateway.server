@@ -19,7 +19,6 @@ type TheaterRoom struct {
 	clients    map[uint32] *Client
 	members    map[string] *UserWithClients
 	hub        *TheaterHub
-	AuthToken  string
 }
 
 func (r *TheaterRoom) GetClients() map[uint32] *Client {
@@ -44,7 +43,7 @@ func (r *TheaterRoom) Join(client *Client) {
 
 	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
 	response, err := grpc.UserServiceClient.GetUser(mCtx, &proto.AuthenticateRequest{
-		Token: []byte(r.AuthToken),
+		Token: []byte(client.AuthToken),
 	})
 	if err != nil {
 		_ = client.conn.Close()
@@ -52,7 +51,7 @@ func (r *TheaterRoom) Join(client *Client) {
 	}
 
 	user := response.Result
-	r.updateUserActivity()
+	r.updateUserActivity(client)
 
 	if _, ok := r.members[user.Id]; !ok {
 		uwc := NewUserWithClients(user)
@@ -65,7 +64,7 @@ func (r *TheaterRoom) Join(client *Client) {
 	return
 }
 
-func (r *TheaterRoom) updateUserActivity() {
+func (r *TheaterRoom) updateUserActivity(client *Client) {
 	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
 	_, _ = grpc.UserServiceClient.UpdateActivity(mCtx, &proto.UpdateActivityRequest{
 		Activity: &messages.Activity{
@@ -73,15 +72,15 @@ func (r *TheaterRoom) updateUserActivity() {
 			Activity: r.theater.Title,
 		},
 		AuthRequest: &proto.AuthenticateRequest{
-			Token: []byte(r.AuthToken),
+			Token: []byte(client.AuthToken),
 		},
 	})
 }
 
-func (r *TheaterRoom) removeUserActivity() {
+func (r *TheaterRoom) removeUserActivity(client *Client) {
 	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
 	_, _ = grpc.UserServiceClient.RemoveActivity(mCtx, &proto.AuthenticateRequest{
-		Token: []byte(r.AuthToken),
+		Token: []byte(client.AuthToken),
 	})
 }
 
@@ -92,7 +91,7 @@ func (r *TheaterRoom) Leave(id uint32) {
 	delete(r.clients, client.Id)
 	delete(r.members[client.user.Id].Clients, id)
 
-	r.removeUserActivity()
+	r.removeUserActivity(client)
 
 	if len(r.members[client.user.Id].Clients) == 0 {
 		delete(r.members, client.user.Id)
@@ -193,7 +192,7 @@ func NewTheaterRoom(name string, hub *TheaterHub) (*TheaterRoom, error) {
 
 	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
 	response, err := grpc.TheaterServiceClient.GetTheater(mCtx, &messages.Theater{
-		Hash: name,
+		Id: name,
 	})
 
 	if err != nil {

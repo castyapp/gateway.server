@@ -70,7 +70,7 @@ func (h *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 			return nil
 		}
 
-		room.AuthToken = string(event.Token)
+		client.AuthToken = string(event.Token)
 
 		room.Join(client)
 
