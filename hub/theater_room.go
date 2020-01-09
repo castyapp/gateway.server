@@ -15,6 +15,7 @@ import (
 /* Has a name, clients, count which holds the actual coutn and index which acts as the unique id */
 type TheaterRoom struct {
 	name       string
+	theater    *messages.Theater
 	clients    map[uint32] *Client
 	members    map[string] *UserWithClients
 	hub        *TheaterHub
@@ -51,6 +52,7 @@ func (r *TheaterRoom) Join(client *Client) {
 	}
 
 	user := response.Result
+	r.updateUserActivity()
 
 	if _, ok := r.members[user.Id]; !ok {
 		uwc := NewUserWithClients(user)
@@ -63,12 +65,34 @@ func (r *TheaterRoom) Join(client *Client) {
 	return
 }
 
+func (r *TheaterRoom) updateUserActivity() {
+	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+	_, _ = grpc.UserServiceClient.UpdateActivity(mCtx, &proto.UpdateActivityRequest{
+		Activity: &messages.Activity{
+			Id:       r.theater.Id,
+			Activity: r.theater.Title,
+		},
+		AuthRequest: &proto.AuthenticateRequest{
+			Token: []byte(r.AuthToken),
+		},
+	})
+}
+
+func (r *TheaterRoom) removeUserActivity() {
+	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+	_, _ = grpc.UserServiceClient.RemoveActivity(mCtx, &proto.AuthenticateRequest{
+		Token: []byte(r.AuthToken),
+	})
+}
+
 /* Removes client from room */
 func (r *TheaterRoom) Leave(id uint32) {
 	// removing client from room
 	client := r.clients[id]
 	delete(r.clients, client.Id)
 	delete(r.members[client.user.Id].Clients, id)
+
+	r.removeUserActivity()
 
 	if len(r.members[client.user.Id].Clients) == 0 {
 		delete(r.members, client.user.Id)
@@ -165,10 +189,22 @@ func (r *TheaterRoom) HandleEvents(client *Client) {
 }
 
 /* Constructor */
-func NewTheaterRoom(name string) *TheaterRoom {
+func NewTheaterRoom(name string, hub *TheaterHub) (*TheaterRoom, error) {
+
+	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+	response, err := grpc.TheaterServiceClient.GetTheater(mCtx, &messages.Theater{
+		Hash: name,
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
 	return &TheaterRoom{
 		name:     name,
 		clients:  make(map[uint32] *Client, 0),
 		members:  make(map[string] *UserWithClients, 0),
-	}
+		theater:  response.Result,
+		hub:      hub,
+	}, nil
 }

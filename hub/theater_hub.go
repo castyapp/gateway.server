@@ -20,12 +20,14 @@ type TheaterHub struct {
 /* If room doesn't exist creates it then returns it */
 func (h *TheaterHub) GetOrCreateRoom(name string) (*TheaterRoom, error) {
 	if !h.Has(name) {
-		h.Set(name, NewTheaterRoom(name))
+		newTheater, err := NewTheaterRoom(name, h)
+		if err != nil {
+			return nil, err
+		}
+		h.Set(name, newTheater)
 	}
 	if r, ok := h.Get(name); ok {
-		room := r.(*TheaterRoom)
-		room.hub = h
-		return room, nil
+		return r.(*TheaterRoom), nil
 	}
 	return nil, errors.New("room is missing from cmp")
 }
