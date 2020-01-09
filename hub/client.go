@@ -5,13 +5,13 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	proto2 "gitlab.com/movienight1/grpc.proto"
+	"gitlab.com/movienight1/grpc.proto/messages"
 	"log"
 	"movie.night.ws.server/grpc"
 	"movie.night.ws.server/hub/protocol"
 	"movie.night.ws.server/hub/protocol/protobuf"
 	"movie.night.ws.server/hub/protocol/protobuf/enums"
-	proto2 "movie.night.ws.server/proto"
-	"movie.night.ws.server/proto/messages"
 	"time"
 )
 

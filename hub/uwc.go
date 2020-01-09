@@ -1,7 +1,7 @@
 package hub
 
 import (
-	"movie.night.ws.server/proto/messages"
+	"gitlab.com/movienight1/grpc.proto/messages"
 )
 
 type UserWithClients struct {

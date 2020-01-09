@@ -3,6 +3,7 @@ package protobuf;
 
 import "google/protobuf/timestamp.proto";
 import "enums/enums.proto";
+import "grpc.proto/messages/user.proto";
 
 message CMsgProtoBufHeader {
     bytes UserHash        = 1;
@@ -12,7 +13,7 @@ message CMsgProtoBufHeader {
 }
 
 message PersonalStateMsgEvent {
-    string                         user_id   = 1;
+    messages.User                  user      = 1;
     enums.EMSG_PERSONAL_STATE      state     = 2;
     PersonalStateActivityMsgEvent  activity  = 3;
 }

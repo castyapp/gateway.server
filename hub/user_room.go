@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/golang/protobuf/ptypes"
+	"gitlab.com/movienight1/grpc.proto"
+	"gitlab.com/movienight1/grpc.proto/messages"
 	"log"
 	"movie.night.ws.server/grpc"
 	"movie.night.ws.server/hub/protocol/protobuf"
 	"movie.night.ws.server/hub/protocol/protobuf/enums"
-	"movie.night.ws.server/proto"
-	"movie.night.ws.server/proto/messages"
 	"time"
 )
 
@@ -56,7 +56,7 @@ func (r *UserRoom) Join(client *Client) {
 		}
 		r.updateMeOnFriendsList(ActivityState{
 			State: enums.EMSG_PERSONAL_STATE_ONLINE,
-			UserId: client.user.Id,
+			User: client.user,
 		})
 	}
 
@@ -74,7 +74,7 @@ func (r *UserRoom) Leave(id uint32) {
 		r.ChangeState(messages.PERSONAL_STATE_OFFLINE)
 		r.updateMeOnFriendsList(ActivityState{
 			State: enums.EMSG_PERSONAL_STATE_OFFLINE,
-			UserId: client.user.Id,
+			User:  client.user,
 		})
 		r.hub.RemoveRoom(r.name)
 	}
@@ -129,7 +129,7 @@ func (r *UserRoom) updateMeOnFriendsList(as ActivityState) {
 			buffer, err := protobuf.NewMsgProtobuf(enums.EMSG_PERSONAL_STATE_CHANGED, &protobuf.PersonalStateMsgEvent{
 				State:    as.State,
 				Activity: as.Activity,
-				UserId:   as.UserId,
+				User:     as.User,
 			})
 			if err != nil {
 				log.Println(err)

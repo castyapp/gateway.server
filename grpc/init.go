@@ -2,9 +2,9 @@ package grpc
 
 import (
 	"fmt"
+	"gitlab.com/movienight1/grpc.proto"
 	"google.golang.org/grpc"
 	"log"
-	"movie.night.ws.server/proto"
 	"os"
 )
 

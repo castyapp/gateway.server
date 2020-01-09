@@ -3,12 +3,12 @@ package hub
 import (
 	"context"
 	"github.com/google/uuid"
+	"gitlab.com/movienight1/grpc.proto"
+	"gitlab.com/movienight1/grpc.proto/messages"
 	"log"
 	"movie.night.ws.server/grpc"
 	"movie.night.ws.server/hub/protocol/protobuf"
 	"movie.night.ws.server/hub/protocol/protobuf/enums"
-	"movie.night.ws.server/proto"
-	"movie.night.ws.server/proto/messages"
 	"time"
 )
 
@@ -66,12 +66,15 @@ func (r *TheaterRoom) Join(client *Client) {
 
 func (r *TheaterRoom) updateUserActivity(client *Client) {
 	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
-	_, _ = grpc.TheaterServiceClient.AddMember(mCtx, &proto.AddOrRemoveMemberRequest{
+	_, err := grpc.TheaterServiceClient.AddMember(mCtx, &proto.AddOrRemoveMemberRequest{
 		TheaterId: r.theater.Id,
 		AuthRequest: &proto.AuthenticateRequest{
 			Token: []byte(client.AuthToken),
 		},
 	})
+	if err != nil {
+		log.Println(err)
+	}
 	_, _ = grpc.UserServiceClient.UpdateActivity(mCtx, &proto.UpdateActivityRequest{
 		Activity: &messages.Activity{
 			Id:       r.theater.Id,
@@ -85,12 +88,15 @@ func (r *TheaterRoom) updateUserActivity(client *Client) {
 
 func (r *TheaterRoom) removeUserActivity(client *Client) {
 	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
-	_, _ = grpc.TheaterServiceClient.RemoveMember(mCtx, &proto.AddOrRemoveMemberRequest{
+	_, err := grpc.TheaterServiceClient.RemoveMember(mCtx, &proto.AddOrRemoveMemberRequest{
 		TheaterId: r.theater.Id,
 		AuthRequest: &proto.AuthenticateRequest{
 			Token: []byte(client.AuthToken),
 		},
 	})
+	if err != nil {
+		log.Println(err)
+	}
 	_, _ = grpc.UserServiceClient.RemoveActivity(mCtx, &proto.AuthenticateRequest{
 		Token: []byte(client.AuthToken),
 	})
@@ -156,7 +162,7 @@ func (r *TheaterRoom) updateClientToOtherClients(client *Client, state enums.EMS
 	var (
 		activity = &protobuf.PersonalStateActivityMsgEvent{}
 		msg = &protobuf.PersonalStateMsgEvent{
-			UserId: client.user.Id,
+			User: client.user,
 			State:  state,
 			Activity: activity,
 		}

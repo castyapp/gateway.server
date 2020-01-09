@@ -4,9 +4,9 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/gorilla/websocket"
 	"github.com/orcaman/concurrent-map"
+	"gitlab.com/movienight1/grpc.proto/messages"
 	"log"
 	"movie.night.ws.server/hub/protocol/protobuf"
-	"movie.night.ws.server/proto/messages"
 	"net/http"
 )
 
