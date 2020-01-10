@@ -7,6 +7,7 @@ import (
 	"gitlab.com/movienight1/grpc.proto/messages"
 	"log"
 	"movie.night.ws.server/hub/protocol/protobuf"
+	"movie.night.ws.server/hub/protocol/protobuf/enums"
 	"net/http"
 )
 
@@ -52,8 +53,19 @@ func (h *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
 	})
 
 	client.OnAuthorizedFailed(func() {
-		log.Printf("Authentication failed [%d]. disconnected!", client.Id)
-		_ = client.conn.Close()
+
+		buffer, err := protobuf.NewMsgProtobuf(enums.EMSG_UNAUTHORIZED, nil)
+		if err != nil {
+			log.Println(err)
+		}
+
+		if err := client.WriteMessage(buffer.Bytes()); err != nil {
+			log.Printf("Authentication failed [%d]. disconnected!", client.Id)
+			_ = client.conn.Close()
+			return
+		}
+
+		log.Printf("Authentication failed [%d]. sent `EMSG_UNAUTHORIZED` request to client!", client.Id)
 	})
 
 	client.ReadLoop()
