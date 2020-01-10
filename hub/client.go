@@ -69,25 +69,34 @@ func (c *Client) OnLeave(callback func(room Room))  {
 
 func (c *Client) ReadLoop() {
 
+	defer close(c.Event)
+
 	for {
 
 		mType, data, err := c.conn.ReadMessage()
 		if err != nil {
-			break
+			log.Println("Error while reading user hub messages: ", err)
+			switch err.(type) {
+			case *websocket.CloseError:
+				break
+			}
+			continue
 		}
 
 		if mType != websocket.BinaryMessage {
-			return
+			log.Println("Websocket message should be BinaryMessage")
+			continue
 		}
 
 		packet, err := protocol.NewPacket(data)
 		if err != nil {
-			log.Println(err)
-			break
+			log.Println("Error while creating new packet: ", err)
+			continue
 		}
 
 		if !packet.IsProto {
-			break
+			log.Println("Packet type should be Protobuf")
+			continue
 		}
 
 		c.State = ConnectedState
