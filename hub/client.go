@@ -69,18 +69,30 @@ func (c *Client) OnLeave(callback func(room Room))  {
 
 func (c *Client) ReadLoop() {
 
-	defer close(c.Event)
+	defer func() {
+		close(c.Event)
+		_ = c.conn.Close()
+	}()
+
+
+	const (
+		pongWait   = 60 * time.Second
+	)
+
+	c.conn.SetReadLimit(1000)
+	_ = c.conn.SetReadDeadline(time.Now().Add(pongWait))
+	c.conn.SetPongHandler(func(string) error {
+		return c.conn.SetReadDeadline(time.Now().Add(pongWait))
+	})
 
 	for {
 
 		mType, data, err := c.conn.ReadMessage()
 		if err != nil {
-			log.Println("Error while reading user hub messages: ", err)
-			switch err.(type) {
-			case *websocket.CloseError:
-				break
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Printf("Error while reading user hub messages, error: %v", err)
 			}
-			continue
+			break
 		}
 
 		if mType != websocket.BinaryMessage {
