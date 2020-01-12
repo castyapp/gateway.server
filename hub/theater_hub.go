@@ -14,6 +14,7 @@ import (
 /* Controls a bunch of rooms */
 type TheaterHub struct {
 	upgrader  websocket.Upgrader
+	userHub   *UserHub
 	cmap.ConcurrentMap
 }
 
@@ -86,11 +87,9 @@ func (h *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 	client.OnLeave(func(room Room) {
 		if client.State != DisconnectedState {
 			if room == nil {
-				log.Println("Could not find room.")
 				return
 			}
 			room.Leave(client)
-			log.Printf("Client [%d] disconnected!", client.Id)
 		}
 	})
 
@@ -98,8 +97,9 @@ func (h *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 }
 
 /* Constructor */
-func NewTheaterHub() *TheaterHub {
+func NewTheaterHub(uhub *UserHub) *TheaterHub {
 	hub := new(TheaterHub)
+	hub.userHub = uhub
 	hub.ConcurrentMap = cmap.New()
 	hub.upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,

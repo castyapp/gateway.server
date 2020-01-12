@@ -1,0 +1,13 @@
+syntax = "proto3";
+package protobuf;
+
+import "google/protobuf/timestamp.proto";
+
+message ChatMsgEvent {
+    bytes   message = 1;
+    string  from    = 2;
+    string  to      = 3;
+    repeated uint64 emojies  = 4;
+    repeated uint64 mentions = 5;
+    google.protobuf.Timestamp created_at = 6;
+}

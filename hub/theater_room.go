@@ -57,13 +57,10 @@ func (r *TheaterRoom) Join(client *Client) {
 		uwc := NewUserWithClients(user)
 		uwc.Clients[client.Id] = client
 		r.members[user.Id] = uwc
-		err = r.updateClientToFriends(client, &protobuf.PersonalStateMsgEvent{
+		_ = r.updateClientToFriends(client, &protobuf.PersonalStateMsgEvent{
 			User:  client.user,
 			State: enums.EMSG_PERSONAL_STATE_ONLINE,
 		})
-		if err != nil {
-			log.Println(err)
-		}
 	} else {
 		r.members[user.Id].Clients[client.Id] = client
 	}
@@ -90,17 +87,6 @@ func (r *TheaterRoom) updateUserActivity(client *Client) {
 			Token: []byte(client.AuthToken),
 		},
 	})
-	err = r.updateClientToFriends(client, &protobuf.PersonalStateMsgEvent{
-		User:  client.user,
-		State: enums.EMSG_PERSONAL_STATE_ONLINE,
-		Activity: &messages.Activity{
-			Id:       r.theater.Id,
-			Activity: r.theater.Title,
-		},
-	})
-	if err != nil {
-		log.Println(err)
-	}
 }
 
 func (r *TheaterRoom) removeUserActivity(client *Client) {
@@ -117,13 +103,6 @@ func (r *TheaterRoom) removeUserActivity(client *Client) {
 	_, _ = grpc.UserServiceClient.RemoveActivity(mCtx, &proto.AuthenticateRequest{
 		Token: []byte(client.AuthToken),
 	})
-	err = r.updateClientToFriends(client, &protobuf.PersonalStateMsgEvent{
-		User:  client.user,
-		State: enums.EMSG_PERSONAL_STATE_ONLINE,
-	})
-	if err != nil {
-		log.Println(err)
-	}
 }
 
 /* Removes client from room */
@@ -139,6 +118,10 @@ func (r *TheaterRoom) Leave(client *Client) {
 		err := r.updateClientToFriends(client, &protobuf.PersonalStateMsgEvent{
 			User:  client.user,
 			State: enums.EMSG_PERSONAL_STATE_OFFLINE,
+			Activity: &messages.Activity{
+				Id: r.theater.Id,
+				Activity: r.theater.Title,
+			},
 		})
 		if err != nil {
 			log.Println(err)
@@ -192,7 +175,28 @@ func (r *TheaterRoom) updateClientToFriends(client *Client, msg *protobuf.Person
 	if err != nil {
 		return err
 	}
+
+	pmae := &protobuf.PersonalActivityMsgEvent{
+		User: client.user,
+	}
+	if msg.State == enums.EMSG_PERSONAL_STATE_ONLINE {
+		pmae.Activity = &messages.Activity{
+			Id: r.theater.Id,
+			Activity: r.theater.Title,
+		}
+	}
+	_ = r.updateMyActivity(client, pmae)
+
 	return r.BroadcastEx(client.Id, buffer.Bytes())
+}
+
+func (r *TheaterRoom) updateMyActivity(client *Client, msg *protobuf.PersonalActivityMsgEvent) error {
+	uroom, err := r.hub.userHub.FindRoom(client.user.Id)
+	if err != nil {
+		return err
+	}
+	uroom.updateMyActivityOnFriendsList(msg)
+	return nil
 }
 
 /* Handle messages */

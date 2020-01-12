@@ -118,6 +118,25 @@ func (r *UserRoom) sendMessage(message *messages.Message) error {
 	return errors.New("could not find friend's room")
 }
 
+func (r *UserRoom) updateMyActivityOnFriendsList(psme *protobuf.PersonalActivityMsgEvent) {
+
+	for _, fr := range r.Friends {
+		if fc, ok := r.hub.Get(fr); ok {
+
+			friendRoom := fc.(*UserRoom)
+
+			buffer, err := protobuf.NewMsgProtobuf(enums.EMSG_PERSONAL_ACTIVITY_CHANGED, psme)
+			if err != nil {
+				log.Println(err)
+				continue
+			}
+
+			_ = friendRoom.Send(buffer.Bytes())
+		}
+	}
+
+}
+
 func (r *UserRoom) updateMeOnFriendsList(psme *protobuf.PersonalStateMsgEvent) {
 
 	for _, fr := range r.Friends {

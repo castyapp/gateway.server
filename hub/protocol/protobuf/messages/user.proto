@@ -1,0 +1,33 @@
+syntax = "proto3";
+package messages;
+
+import "google/protobuf/timestamp.proto";
+
+enum PERSONAL_STATE {
+    OFFLINE    = 0;
+    ONLINE     = 1;
+    IDLE       = 2;
+    BUSY       = 3;
+    INVISIBLE  = 4;
+}
+
+message Activity {
+    string  id          = 1;
+    string  activity    = 2;
+}
+
+message User {
+    string           id          = 1;
+    string           fullname    = 2;
+    string           username    = 3;
+    string           hash        = 4;
+    string           email       = 5;
+    string           password    = 6;
+    bool             is_active   = 7;
+    string           avatar      = 8;
+    Activity         activity    = 9;
+    PERSONAL_STATE   state       = 10;
+    google.protobuf.Timestamp  last_login  = 11;
+    google.protobuf.Timestamp  joined_at   = 12;
+    google.protobuf.Timestamp  updated_at  = 13;
+}

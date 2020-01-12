@@ -17,7 +17,7 @@ func main() {
 	var (
 		router     = mux.NewRouter()
 		userhub    = hub.NewUserHub()
-	    theaterhub = hub.NewTheaterHub()
+	    theaterhub = hub.NewTheaterHub(userhub)
 		port       = 3000
 	)
 

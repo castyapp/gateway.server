@@ -19,6 +19,14 @@ type UserHub struct {
 }
 
 /* If room doesn't exist creates it then returns it */
+func (h *UserHub) FindRoom(name string) (room *UserRoom, err error) {
+	if r, ok := h.Get(name); ok {
+		return r.(*UserRoom), nil
+	}
+	return nil, errors.New("user room is missing from cmp")
+}
+
+/* If room doesn't exist creates it then returns it */
 func (h *UserHub) GetOrCreateRoom(name string) (room *UserRoom, err error) {
 	if !h.Has(name) {
 		h.Set(name, NewUserRoom(name, h))
@@ -75,7 +83,6 @@ func (h *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
 
 	client.OnLeave(func(room Room) {
 		if client.State != DisconnectedState {
-			log.Printf("Client [%d] disconnected!", client.Id)
 			if room == nil {
 				return
 			}
