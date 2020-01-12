@@ -29,18 +29,16 @@ type UserRoom struct {
 	// so we can find the friends room with the hash_id
 }
 
-func (r *UserRoom) ChangeState(state messages.PERSONAL_STATE) bool {
-	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
-	_, err := grpc.UserServiceClient.UpdateState(mCtx, &proto.UpdateStateRequest{
-		State: state,
-		AuthRequest: &proto.AuthenticateRequest{
-			Token: []byte(r.AuthToken),
-		},
-	})
-	if err != nil {
-		return false
-	}
-	return true
+func (r *UserRoom) ChangeState(state messages.PERSONAL_STATE) {
+	go func() {
+		mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+		_, _ = grpc.UserServiceClient.UpdateState(mCtx, &proto.UpdateStateRequest{
+			State: state,
+			AuthRequest: &proto.AuthenticateRequest{
+				Token: []byte(r.AuthToken),
+			},
+		})
+	}()
 }
 
 /* Add a conn to clients map so that it can be managed */
