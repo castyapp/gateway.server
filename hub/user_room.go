@@ -54,9 +54,9 @@ func (r *UserRoom) Join(client *Client) {
 		if err := r.fetchFriends(); err != nil {
 			log.Println(err)
 		}
-		r.updateMeOnFriendsList(ActivityState{
-			State: enums.EMSG_PERSONAL_STATE_ONLINE,
-			User: client.user,
+		r.updateMeOnFriendsList(&protobuf.PersonalStateMsgEvent{
+			State:    enums.EMSG_PERSONAL_STATE_ONLINE,
+			User:     client.user,
 		})
 	}
 
@@ -67,14 +67,13 @@ func (r *UserRoom) Join(client *Client) {
 }
 
 /* Removes client from room */
-func (r *UserRoom) Leave(id uint32) {
-	client := r.clients[id]
-	delete(r.clients, id)
+func (r *UserRoom) Leave(client *Client) {
+	delete(r.clients, client.Id)
 	if len(r.clients) == 0 {
 		r.ChangeState(messages.PERSONAL_STATE_OFFLINE)
-		r.updateMeOnFriendsList(ActivityState{
-			State: enums.EMSG_PERSONAL_STATE_OFFLINE,
-			User:  client.user,
+		r.updateMeOnFriendsList(&protobuf.PersonalStateMsgEvent{
+			State:    enums.EMSG_PERSONAL_STATE_OFFLINE,
+			User:     client.user,
 		})
 		r.hub.RemoveRoom(r.name)
 	}
@@ -87,7 +86,7 @@ func (r *UserRoom) Send(msg []byte) (err error) {
 	return
 }
 
-func (r *UserRoom) sendMessageTo(message *messages.Message) error {
+func (r *UserRoom) sendMessage(message *messages.Message) error {
 
 	if fc, ok := r.hub.Get(message.Reciever.Id); ok {
 
@@ -119,18 +118,14 @@ func (r *UserRoom) sendMessageTo(message *messages.Message) error {
 	return errors.New("could not find friend's room")
 }
 
-func (r *UserRoom) updateMeOnFriendsList(as ActivityState) {
+func (r *UserRoom) updateMeOnFriendsList(psme *protobuf.PersonalStateMsgEvent) {
 
 	for _, fr := range r.Friends {
 		if fc, ok := r.hub.Get(fr); ok {
 
 			friendRoom := fc.(*UserRoom)
 
-			buffer, err := protobuf.NewMsgProtobuf(enums.EMSG_PERSONAL_STATE_CHANGED, &protobuf.PersonalStateMsgEvent{
-				State:    as.State,
-				Activity: as.Activity,
-				User:     as.User,
-			})
+			buffer, err := protobuf.NewMsgProtobuf(enums.EMSG_PERSONAL_STATE_CHANGED, psme)
 			if err != nil {
 				log.Println(err)
 				continue
@@ -191,7 +186,7 @@ func (r *UserRoom) HandleEvents(client *Client) {
 						break
 					}
 
-					_ = r.sendMessageTo(response.Result)
+					_ = r.sendMessage(response.Result)
 				}
 			}
 		}
@@ -199,10 +194,11 @@ func (r *UserRoom) HandleEvents(client *Client) {
 }
 
 /* Constructor */
-func NewUserRoom(name string) *UserRoom {
+func NewUserRoom(name string, hub *UserHub) *UserRoom {
 	return &UserRoom{
 		name:     name,
 		clients:  make(map[uint32] *Client),
 		Friends:  make([]string, 0),
+		hub:      hub,
 	}
 }

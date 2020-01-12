@@ -13,9 +13,9 @@ message CMsgProtoBufHeader {
 }
 
 message PersonalStateMsgEvent {
-    messages.User                  user      = 1;
-    enums.EMSG_PERSONAL_STATE      state     = 2;
-    PersonalStateActivityMsgEvent  activity  = 3;
+    messages.User               user      = 1;
+    enums.EMSG_PERSONAL_STATE   state     = 2;
+    messages.Activity           activity  = 3;
 }
 
 message ChatMsgEvent {

@@ -17,7 +17,7 @@ import (
 
 type Room interface {
 	HandleEvents(client *Client)
-	Leave(id uint32)
+	Leave(client *Client)
 }
 
 type State uint
@@ -37,6 +37,7 @@ type Client struct {
 	user            *messages.User
 	onAuthSuccess   func(e proto.Message, u *messages.User) Room
 	onAuthFailed    func()
+	onLeaveRoom     func(room Room)
 	authenticated   bool
 	room            Room
 	State           State
@@ -51,8 +52,8 @@ func (c *Client) OnAuthorized(callback func(e proto.Message, u *messages.User) R
 	c.onAuthSuccess = callback
 }
 
-func (c *Client) OnAuthorizedFailed(callback func()) {
-	c.onAuthFailed = callback
+func (c *Client) OnUnauthorized(cb func()) {
+	c.onAuthFailed = cb
 }
 
 func (c *Client) IsAuthenticated() bool {
@@ -62,28 +63,25 @@ func (c *Client) IsAuthenticated() bool {
 	return c.authenticated
 }
 
-func (c *Client) OnLeave(callback func(room Room))  {
-	callback(c.room)
-	c.State = DisconnectedState
+func (c *Client) OnLeave(cb func(room Room))  {
+	c.onLeaveRoom = cb
 }
 
-func (c *Client) ReadLoop() {
+func (c *Client) Listen() {
 
 	defer func() {
+		// call registered on leave function
+		c.onLeaveRoom(c.room)
+
+		// set client as disconnected
+		c.State = DisconnectedState
+
+		// closing event channel
 		close(c.Event)
+
+		// close websocket connection
 		_ = c.conn.Close()
 	}()
-
-
-	const (
-		pongWait   = 60 * time.Second
-	)
-
-	c.conn.SetReadLimit(1000)
-	_ = c.conn.SetReadDeadline(time.Now().Add(pongWait))
-	c.conn.SetPongHandler(func(string) error {
-		return c.conn.SetReadDeadline(time.Now().Add(pongWait))
-	})
 
 	for {
 

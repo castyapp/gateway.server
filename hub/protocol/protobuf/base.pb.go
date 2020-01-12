@@ -89,7 +89,7 @@ func (m *CMsgProtoBufHeader) GetAuthToken() []byte {
 type PersonalStateMsgEvent struct {
 	User                 *messages.User                 `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
 	State                enums.EMSG_PERSONAL_STATE      `protobuf:"varint,2,opt,name=state,proto3,enum=enums.EMSG_PERSONAL_STATE" json:"state,omitempty"`
-	Activity             *PersonalStateActivityMsgEvent `protobuf:"bytes,3,opt,name=activity,proto3" json:"activity,omitempty"`
+	Activity             *messages.Activity             `protobuf:"bytes,3,opt,name=activity,proto3" json:"activity,omitempty"`
 	XXX_NoUnkeyedLiteral struct{}                       `json:"-"`
 	XXX_unrecognized     []byte                         `json:"-"`
 	XXX_sizecache        int32                          `json:"-"`
@@ -134,7 +134,7 @@ func (m *PersonalStateMsgEvent) GetState() enums.EMSG_PERSONAL_STATE {
 	return enums.EMSG_PERSONAL_STATE_OFFLINE
 }
 
-func (m *PersonalStateMsgEvent) GetActivity() *PersonalStateActivityMsgEvent {
+func (m *PersonalStateMsgEvent) GetActivity() *messages.Activity {
 	if m != nil {
 		return m.Activity
 	}

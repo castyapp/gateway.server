@@ -57,7 +57,10 @@ func (r *TheaterRoom) Join(client *Client) {
 		uwc := NewUserWithClients(user)
 		uwc.Clients[client.Id] = client
 		r.members[user.Id] = uwc
-		_ = r.updateClientToOtherClients(client, enums.EMSG_PERSONAL_STATE_ONLINE)
+		_ = r.updateClientToFriends(client, &protobuf.PersonalStateMsgEvent{
+			User:  client.user,
+			State: enums.EMSG_PERSONAL_STATE_ONLINE,
+		})
 	} else {
 		r.members[user.Id].Clients[client.Id] = client
 	}
@@ -84,6 +87,14 @@ func (r *TheaterRoom) updateUserActivity(client *Client) {
 			Token: []byte(client.AuthToken),
 		},
 	})
+	_ = r.updateClientToFriends(client, &protobuf.PersonalStateMsgEvent{
+		User:  client.user,
+		State: enums.EMSG_PERSONAL_STATE_OFFLINE,
+		Activity: &messages.Activity{
+			Id:       r.theater.Id,
+			Activity: r.theater.Title,
+		},
+	})
 }
 
 func (r *TheaterRoom) removeUserActivity(client *Client) {
@@ -100,20 +111,26 @@ func (r *TheaterRoom) removeUserActivity(client *Client) {
 	_, _ = grpc.UserServiceClient.RemoveActivity(mCtx, &proto.AuthenticateRequest{
 		Token: []byte(client.AuthToken),
 	})
+	_ = r.updateClientToFriends(client, &protobuf.PersonalStateMsgEvent{
+		User:  client.user,
+		State: enums.EMSG_PERSONAL_STATE_ONLINE,
+	})
 }
 
 /* Removes client from room */
-func (r *TheaterRoom) Leave(id uint32) {
+func (r *TheaterRoom) Leave(client *Client) {
 	// removing client from room
-	client := r.clients[id]
 	delete(r.clients, client.Id)
-	delete(r.members[client.user.Id].Clients, id)
+	delete(r.members[client.user.Id].Clients, client.Id)
 
 	r.removeUserActivity(client)
 
 	if len(r.members[client.user.Id].Clients) == 0 {
 		delete(r.members, client.user.Id)
-		_ = r.updateClientToOtherClients(client, enums.EMSG_PERSONAL_STATE_OFFLINE)
+		_ = r.updateClientToFriends(client, &protobuf.PersonalStateMsgEvent{
+			User:  client.user,
+			State: enums.EMSG_PERSONAL_STATE_OFFLINE,
+		})
 	}
 
 	if len(r.clients) == 0 {
@@ -155,24 +172,14 @@ func (r *TheaterRoom) BroadcastEx(senderid uint32, msg []byte) (err error) {
 }
 
 func (r *TheaterRoom) ReadLoop(id uint32) {
-	r.clients[id].ReadLoop()
+	r.clients[id].Listen()
 }
 
-func (r *TheaterRoom) updateClientToOtherClients(client *Client, state enums.EMSG_PERSONAL_STATE) error {
-	var (
-		activity = &protobuf.PersonalStateActivityMsgEvent{}
-		msg = &protobuf.PersonalStateMsgEvent{
-			User: client.user,
-			State:  state,
-			Activity: activity,
-		}
-	)
-
+func (r *TheaterRoom) updateClientToFriends(client *Client, msg *protobuf.PersonalStateMsgEvent) error {
 	buffer, err := protobuf.NewMsgProtobuf(enums.EMSG_THEATER_UPDATE_USER, msg)
 	if err != nil {
 		return err
 	}
-
 	return r.BroadcastEx(client.Id, buffer.Bytes())
 }
 

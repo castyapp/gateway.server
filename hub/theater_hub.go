@@ -77,24 +77,24 @@ func (h *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 		return room
 	})
 
-	client.OnAuthorizedFailed(func() {
+	client.OnUnauthorized(func() {
 		_ = client.conn.Close()
 		log.Printf("Authentication failed [%d]. disconnected!", client.Id)
 	})
 
-	client.ReadLoop()
-
-	/* If ReadLoop breaks then client disconnected. */
+	/* If Listen breaks then client disconnected. */
 	client.OnLeave(func(room Room) {
 		if client.State != DisconnectedState {
 			if room == nil {
 				log.Println("Could not find room.")
 				return
 			}
-			room.Leave(client.Id)
+			room.Leave(client)
 			log.Printf("Client [%d] disconnected!", client.Id)
 		}
 	})
+
+	client.Listen()
 }
 
 /* Constructor */

@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"errors"
 	"github.com/golang/protobuf/proto"
 	"github.com/gorilla/websocket"
 	"github.com/orcaman/concurrent-map"
@@ -18,14 +19,14 @@ type UserHub struct {
 }
 
 /* If room doesn't exist creates it then returns it */
-func (h *UserHub) GetOrCreateRoom(name string) (room *UserRoom) {
+func (h *UserHub) GetOrCreateRoom(name string) (room *UserRoom, err error) {
 	if !h.Has(name) {
-		h.Set(name, NewUserRoom(name))
+		h.Set(name, NewUserRoom(name, h))
 	}
-	r, _ := h.Get(name)
-	room = r.(*UserRoom)
-	room.hub = h
-	return
+	if r, ok := h.Get(name); ok {
+		return r.(*UserRoom), nil
+	}
+	return nil, errors.New("user room is missing from cmp")
 }
 
 func (h *UserHub) RemoveRoom(name string) {
@@ -46,13 +47,18 @@ func (h *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
 
 	client.OnAuthorized(func(e proto.Message, u *messages.User) Room {
 		event := e.(*protobuf.LogOnEvent)
-		room := h.GetOrCreateRoom(u.Id)
+		room , err := h.GetOrCreateRoom(u.Id)
+		if err != nil {
+			_ = client.conn.Close()
+			log.Println("Error while creating or getting the room from cmp: ", err)
+			return nil
+		}
 		room.AuthToken = string(event.Token)
 		room.Join(client)
 		return room
 	})
 
-	client.OnAuthorizedFailed(func() {
+	client.OnUnauthorized(func() {
 
 		buffer, err := protobuf.NewMsgProtobuf(enums.EMSG_UNAUTHORIZED, nil)
 		if err != nil {
@@ -61,26 +67,23 @@ func (h *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
 
 		if err := client.WriteMessage(buffer.Bytes()); err != nil {
 			log.Printf("Authentication failed [%d]. disconnected!", client.Id)
-			_ = client.conn.Close()
-			return
 		}
 
+		_ = client.conn.Close()
 		log.Printf("Authentication failed [%d]. sent `EMSG_UNAUTHORIZED` request to client!", client.Id)
 	})
 
-	client.ReadLoop()
-
-	/* If ReadLoop breaks then client disconnected. */
 	client.OnLeave(func(room Room) {
 		if client.State != DisconnectedState {
+			log.Printf("Client [%d] disconnected!", client.Id)
 			if room == nil {
-				log.Println("Could not find room.")
 				return
 			}
-			room.Leave(client.Id)
-			log.Printf("Client [%d] disconnected!", client.Id)
+			room.Leave(client)
 		}
 	})
+
+	client.Listen()
 }
 
 /* Constructor */

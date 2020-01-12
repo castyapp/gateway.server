@@ -10,7 +10,7 @@ import (
 
 var (
 	UserServiceClient     proto.UserServiceClient
-	AuthServiceClient     proto.AuthServiceClient
+	//AuthServiceClient     proto.AuthServiceClient
 	TheaterServiceClient  proto.TheaterServiceClient
 	MessagesServiceClient proto.MessagesServiceClient
 )
@@ -28,7 +28,7 @@ func init() {
 	}
 
 	UserServiceClient    = proto.NewUserServiceClient(conn)
-	AuthServiceClient    = proto.NewAuthServiceClient(conn)
+	//AuthServiceClient    = proto.NewAuthServiceClient(conn)
 	TheaterServiceClient = proto.NewTheaterServiceClient(conn)
 	MessagesServiceClient = proto.NewMessagesServiceClient(conn)
 }
