@@ -68,41 +68,39 @@ func (r *TheaterRoom) Join(client *Client) {
 }
 
 func (r *TheaterRoom) updateUserActivity(client *Client) {
-	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
-	_, err := grpc.TheaterServiceClient.AddMember(mCtx, &proto.AddOrRemoveMemberRequest{
-		TheaterId: r.theater.Id,
-		AuthRequest: &proto.AuthenticateRequest{
-			Token: []byte(client.AuthToken),
-		},
-	})
-	if err != nil {
-		log.Println(err)
-	}
-	_, _ = grpc.UserServiceClient.UpdateActivity(mCtx, &proto.UpdateActivityRequest{
-		Activity: &messages.Activity{
-			Id:       r.theater.Id,
-			Activity: r.theater.Title,
-		},
-		AuthRequest: &proto.AuthenticateRequest{
-			Token: []byte(client.AuthToken),
-		},
-	})
+	go func() {
+		mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+		_, _ = grpc.TheaterServiceClient.AddMember(mCtx, &proto.AddOrRemoveMemberRequest{
+			TheaterId: r.theater.Id,
+			AuthRequest: &proto.AuthenticateRequest{
+				Token: []byte(client.AuthToken),
+			},
+		})
+		_, _ = grpc.UserServiceClient.UpdateActivity(mCtx, &proto.UpdateActivityRequest{
+			Activity: &messages.Activity{
+				Id:       r.theater.Id,
+				Activity: r.theater.Title,
+			},
+			AuthRequest: &proto.AuthenticateRequest{
+				Token: []byte(client.AuthToken),
+			},
+		})
+	}()
 }
 
 func (r *TheaterRoom) removeUserActivity(client *Client) {
-	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
-	_, err := grpc.TheaterServiceClient.RemoveMember(mCtx, &proto.AddOrRemoveMemberRequest{
-		TheaterId: r.theater.Id,
-		AuthRequest: &proto.AuthenticateRequest{
+	go func() {
+		mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+		_, _ = grpc.TheaterServiceClient.RemoveMember(mCtx, &proto.AddOrRemoveMemberRequest{
+			TheaterId: r.theater.Id,
+			AuthRequest: &proto.AuthenticateRequest{
+				Token: []byte(client.AuthToken),
+			},
+		})
+		_, _ = grpc.UserServiceClient.RemoveActivity(mCtx, &proto.AuthenticateRequest{
 			Token: []byte(client.AuthToken),
-		},
-	})
-	if err != nil {
-		log.Println(err)
-	}
-	_, _ = grpc.UserServiceClient.RemoveActivity(mCtx, &proto.AuthenticateRequest{
-		Token: []byte(client.AuthToken),
-	})
+		})
+	}()
 }
 
 /* Removes client from room */
@@ -175,7 +173,6 @@ func (r *TheaterRoom) updateClientToFriends(client *Client, msg *protobuf.Person
 	if err != nil {
 		return err
 	}
-
 	pmae := &protobuf.PersonalActivityMsgEvent{
 		User: client.user,
 	}
@@ -186,7 +183,6 @@ func (r *TheaterRoom) updateClientToFriends(client *Client, msg *protobuf.Person
 		}
 	}
 	_ = r.updateMyActivity(client, pmae)
-
 	return r.BroadcastEx(client.Id, buffer.Bytes())
 }
 

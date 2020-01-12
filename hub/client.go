@@ -16,6 +16,7 @@ import (
 )
 
 type Room interface {
+	Join(client *Client)
 	HandleEvents(client *Client)
 	Leave(client *Client)
 }
