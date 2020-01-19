@@ -15,37 +15,31 @@ import (
 type TheaterHub struct {
 	upgrader  websocket.Upgrader
 	userHub   *UserHub
-	cmap.ConcurrentMap
+	cmap cmap.ConcurrentMap
 }
 
 /* If room doesn't exist creates it then returns it */
-func (h *TheaterHub) GetOrCreateRoom(name string) (*TheaterRoom, error) {
-	if !h.Has(name) {
-		newTheater, err := NewTheaterRoom(name, h)
-		if err != nil {
-			return nil, err
-		}
-		h.Set(name, newTheater)
-	}
-	if r, ok := h.Get(name); ok {
+func (h *TheaterHub) GetOrCreateRoom(name string) (room *TheaterRoom, err error) {
+	if r, ok := h.cmap.Get(name); ok {
 		return r.(*TheaterRoom), nil
 	}
-	return nil, errors.New("room is missing from cmp")
+	room, err = NewTheaterRoom(name, h)
+	return
 }
 
 /* If room doesn't exist creates it then returns it */
 func (h *TheaterHub) GetRoom(name string) (*TheaterRoom, error) {
-	if !h.Has(name) {
+	if !h.cmap.Has(name) {
 		return nil, errors.New("room not found")
 	}
-	if r, ok := h.Get(name); ok {
+	if r, ok := h.cmap.Get(name); ok {
 		return r.(*TheaterRoom), nil
 	}
 	return nil, errors.New("room is missing from cmp")
 }
 
 func (h *TheaterHub) RemoveRoom(name string) {
-	h.Remove(name)
+	h.cmap.Remove(name)
 	return
 }
 
@@ -100,7 +94,7 @@ func (h *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 func NewTheaterHub(uhub *UserHub) *TheaterHub {
 	hub := new(TheaterHub)
 	hub.userHub = uhub
-	hub.ConcurrentMap = cmap.New()
+	hub.cmap = cmap.New()
 	hub.upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,

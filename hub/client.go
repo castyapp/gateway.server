@@ -88,6 +88,7 @@ func (c *Client) Listen() {
 
 		mType, data, err := c.conn.ReadMessage()
 		if err != nil {
+			log.Println(err)
 			break
 		}
 

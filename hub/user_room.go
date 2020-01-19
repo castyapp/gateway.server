@@ -18,15 +18,9 @@ import (
 type UserRoom struct {
 	name       string
 	hub        *UserHub
-
-	id         uint32
 	clients    map[uint32] *Client
-
 	AuthToken  string
-
 	Friends    []string
-	// friends is an array full with friends hash
-	// so we can find the friends room with the hash_id
 }
 
 func (r *UserRoom) ChangeState(state messages.PERSONAL_STATE) {
@@ -86,7 +80,7 @@ func (r *UserRoom) Send(msg []byte) (err error) {
 
 func (r *UserRoom) sendMessage(message *messages.Message) error {
 
-	if fc, ok := r.hub.Get(message.Reciever.Id); ok {
+	if fc, ok := r.hub.cmap.Get(message.Reciever.Id); ok {
 
 		from, err := json.Marshal(message.Sender)
 		if err != nil {
@@ -119,7 +113,7 @@ func (r *UserRoom) sendMessage(message *messages.Message) error {
 func (r *UserRoom) updateMyActivityOnFriendsList(psme *protobuf.PersonalActivityMsgEvent) {
 
 	for _, fr := range r.Friends {
-		if fc, ok := r.hub.Get(fr); ok {
+		if fc, ok := r.hub.cmap.Get(fr); ok {
 
 			friendRoom := fc.(*UserRoom)
 
@@ -138,7 +132,7 @@ func (r *UserRoom) updateMyActivityOnFriendsList(psme *protobuf.PersonalActivity
 func (r *UserRoom) updateMeOnFriendsList(psme *protobuf.PersonalStateMsgEvent) {
 
 	for _, fr := range r.Friends {
-		if fc, ok := r.hub.Get(fr); ok {
+		if fc, ok := r.hub.cmap.Get(fr); ok {
 
 			friendRoom := fc.(*UserRoom)
 
@@ -211,11 +205,13 @@ func (r *UserRoom) HandleEvents(client *Client) {
 }
 
 /* Constructor */
-func NewUserRoom(name string, hub *UserHub) *UserRoom {
-	return &UserRoom{
+func NewUserRoom(name string, hub *UserHub) (newRoom *UserRoom) {
+	newRoom = &UserRoom{
 		name:     name,
 		clients:  make(map[uint32] *Client),
 		Friends:  make([]string, 0),
 		hub:      hub,
 	}
+	hub.cmap.Set(name, newRoom)
+	return
 }

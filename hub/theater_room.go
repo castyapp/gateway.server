@@ -236,11 +236,15 @@ func NewTheaterRoom(name string, hub *TheaterHub) (*TheaterRoom, error) {
 		return nil, err
 	}
 
-	return &TheaterRoom{
+	newRoom := &TheaterRoom{
 		name:     name,
 		clients:  make(map[uint32] *Client, 0),
 		members:  make(map[string] *UserWithClients, 0),
 		theater:  response.Result,
 		hub:      hub,
-	}, nil
+	}
+
+	hub.cmap.Set(name, newRoom)
+
+	return newRoom, nil
 }
