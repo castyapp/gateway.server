@@ -21,36 +21,51 @@ type Room interface {
 	Leave(client *Client)
 }
 
-type State uint
-
-const (
-	Initialized       State = 0
-	DisconnectedState State = 1
-	ConnectedState    State = 2
-	JoinedRoomState   State = 3
-)
+type AuthChan struct {
+	err             error
+	authenticated   bool
+	token           []byte
+	event           proto.Message
+	user            *messages.User
+}
 
 type Client struct {
 	Id              uint32
-	token           []byte
 	conn            *websocket.Conn
 	Event           chan *protocol.Packet
-	user            *messages.User
+
 	onAuthSuccess   func(e proto.Message, u *messages.User) Room
 	onAuthFailed    func()
 	onLeaveRoom     func(room Room)
-	authenticated   bool
+
+	authChan        chan AuthChan
+	auth            AuthChan
 	room            Room
-	State           State
-	AuthToken       string
 }
 
 func (c *Client) GetUser() *messages.User {
-	return c.user
+	return c.auth.user
 }
 
 func (c *Client) OnAuthorized(callback func(e proto.Message, u *messages.User) Room) {
-	c.onAuthSuccess = callback
+	go func() {
+		for {
+			if auth := <- c.authChan; auth.authenticated && auth.err == nil {
+				c.auth = auth
+				c.room = callback(auth.event, auth.user)
+				break
+			} else {
+				if c.onAuthFailed != nil {
+					c.onAuthFailed()
+				} else {
+					log.Printf("Authentication failed [%d]. disconnected!", c.Id)
+				}
+				_ = c.conn.Close()
+				return
+			}
+		}
+		c.room.HandleEvents(c)
+	}()
 }
 
 func (c *Client) OnUnauthorized(cb func()) {
@@ -61,7 +76,7 @@ func (c *Client) IsAuthenticated() bool {
 	if c == nil {
 		return false
 	}
-	return c.authenticated
+	return c.auth.authenticated
 }
 
 func (c *Client) OnLeave(cb func(room Room))  {
@@ -73,9 +88,6 @@ func (c *Client) Listen() {
 	defer func() {
 		// call registered on leave function
 		c.onLeaveRoom(c.room)
-
-		// set client as disconnected
-		c.State = DisconnectedState
 
 		// closing event channel
 		close(c.Event)
@@ -108,8 +120,6 @@ func (c *Client) Listen() {
 			continue
 		}
 
-		c.State = ConnectedState
-
 		switch packet.EMsg {
 		case enums.EMSG_LOGON:
 			if !c.IsAuthenticated() {
@@ -118,10 +128,7 @@ func (c *Client) Listen() {
 					log.Println(err)
 					break
 				}
-				if err := c.Authentication(logOnEvent.Token, logOnEvent); err != nil {
-					log.Println(err)
-					break
-				}
+				c.Authentication(logOnEvent.Token, logOnEvent)
 			}
 		case enums.EMSG_THEATER_LOGON:
 			if !c.IsAuthenticated() {
@@ -130,53 +137,38 @@ func (c *Client) Listen() {
 					log.Println(err)
 					break
 				}
-				if err := c.Authentication(logOnEvent.Token, logOnEvent); err != nil {
-					log.Println(err)
-					break
-				}
+				c.Authentication(logOnEvent.Token, logOnEvent)
 			}
 		}
 
 		c.Event <- packet
-
 	}
+
 }
 
-func (c *Client) Authentication(token []byte, event proto.Message) error {
-
+func (c *Client) Authentication(token []byte, event proto.Message) {
 	if !c.IsAuthenticated() {
-
 		mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
 		response, err := grpc.UserServiceClient.GetUser(mCtx, &proto2.AuthenticateRequest{
 			Token: token,
 		})
+
 		if err != nil {
-			c.onAuthFailed()
-			c.authenticated  = false
-			return err
+			c.authChan <- AuthChan{ err: err }
+		} else {
+			c.authChan <- AuthChan{
+				user: response.Result,
+				authenticated: true,
+				event: event,
+				token: token,
+			}
 		}
-
-		user := response.Result
-		c.user = user
-
-		if room := c.onAuthSuccess(event, user); room != nil {
-			c.room = room
-			c.authenticated = true
-			c.token = token
-			go room.HandleEvents(c)
-		}
-
 	}
-
-	return nil
 }
 
-func (c *Client) WriteMessage(msg []byte) error {
-	err := c.conn.WriteMessage(websocket.BinaryMessage, msg)
-	if err != nil {
-		return err
-	}
-	return nil
+func (c *Client) WriteMessage(msg []byte) (err error) {
+	err = c.conn.WriteMessage(websocket.BinaryMessage, msg)
+	return
 }
 
 func NewClient(conn *websocket.Conn) *Client {
@@ -184,7 +176,6 @@ func NewClient(conn *websocket.Conn) *Client {
 		Id:            uuid.New().ID(),
 		conn:          conn,
 		Event:         make(chan *protocol.Packet),
-		authenticated: false,
-		State:         Initialized,
+		authChan:      make(chan AuthChan),
 	}
 }

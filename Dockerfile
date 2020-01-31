@@ -10,16 +10,16 @@ RUN apt-get update
 
 RUN git config --global url."https://oauth2:${GITLAB_ACCESS_TOKEN}@gitlab.com/".insteadOf "https://gitlab.com/"
 
-# Creating work directory
 RUN mkdir /code
 
-# Adding project to work directory
-ADD . /code
+COPY . /code
 
 # Choosing work directory
 WORKDIR /code
 
 # build project
-RUN go build -o movie.night.ws.server .
+RUN go build -o gateway.server .
 
-CMD ["./movie.night.ws.server"]
+EXPOSE 3000
+
+CMD ["./gateway.server"]

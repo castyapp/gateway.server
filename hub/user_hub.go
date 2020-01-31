@@ -63,14 +63,10 @@ func (h *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
 		if err == nil {
 			_ = client.WriteMessage(buffer.Bytes())
 		}
-		_ = client.conn.Close()
 	})
 
 	client.OnLeave(func(room Room) {
-		if client.State != DisconnectedState {
-			if room == nil {
-				return
-			}
+		if room != nil {
 			room.Leave(client)
 		}
 	})

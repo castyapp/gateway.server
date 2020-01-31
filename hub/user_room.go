@@ -38,7 +38,6 @@ func (r *UserRoom) ChangeState(state messages.PERSONAL_STATE) {
 /* Add a conn to clients map so that it can be managed */
 func (r *UserRoom) Join(client *Client) {
 
-	client.State = JoinedRoomState
 	r.clients[client.Id] = client
 
 	if len(r.clients) <= 1 {
@@ -48,12 +47,11 @@ func (r *UserRoom) Join(client *Client) {
 		}
 		r.updateMeOnFriendsList(&protobuf.PersonalStateMsgEvent{
 			State:    enums.EMSG_PERSONAL_STATE_ONLINE,
-			User:     client.user,
+			User:     client.auth.user,
 		})
 	}
 
-	err := protobuf.BrodcastMsgProtobuf(client.conn, enums.EMSG_AUTHORIZED, nil)
-	if err != nil {
+	if err := protobuf.BrodcastMsgProtobuf(client.conn, enums.EMSG_AUTHORIZED, nil); err != nil {
 		log.Println(err)
 	}
 }
@@ -65,7 +63,7 @@ func (r *UserRoom) Leave(client *Client) {
 		r.ChangeState(messages.PERSONAL_STATE_OFFLINE)
 		r.updateMeOnFriendsList(&protobuf.PersonalStateMsgEvent{
 			State:    enums.EMSG_PERSONAL_STATE_OFFLINE,
-			User:     client.user,
+			User:     client.auth.user,
 		})
 		r.hub.RemoveRoom(r.name)
 	}
@@ -78,7 +76,7 @@ func (r *UserRoom) Send(msg []byte) (err error) {
 	return
 }
 
-func (r *UserRoom) sendMessage(message *messages.Message) error {
+func (r *UserRoom) SendMessage(message *messages.Message) error {
 
 	if fc, ok := r.hub.cmap.Get(message.Reciever.Id); ok {
 
@@ -183,12 +181,14 @@ func (r *UserRoom) HandleEvents(client *Client) {
 						break
 					}
 
+					log.Println(chatMessage)
+
 					mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
 					response, err := grpc.MessagesServiceClient.CreateMessage(mCtx, &proto.CreateMessageRequest{
 						RecieverId: chatMessage.To,
 						Content: string(chatMessage.Message),
 						AuthRequest: &proto.AuthenticateRequest{
-							Token: client.token,
+							Token: client.auth.token,
 						},
 					})
 
@@ -197,7 +197,7 @@ func (r *UserRoom) HandleEvents(client *Client) {
 						break
 					}
 
-					_ = r.sendMessage(response.Result)
+					_ = r.SendMessage(response.Result)
 				}
 			}
 		}

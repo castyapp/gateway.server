@@ -8,6 +8,7 @@ import (
 	"gitlab.com/movienight1/grpc.proto/messages"
 	"log"
 	"movie.night.ws.server/hub/protocol/protobuf"
+	"movie.night.ws.server/hub/protocol/protobuf/enums"
 	"net/http"
 )
 
@@ -15,7 +16,7 @@ import (
 type TheaterHub struct {
 	upgrader  websocket.Upgrader
 	userHub   *UserHub
-	cmap cmap.ConcurrentMap
+	cmap      cmap.ConcurrentMap
 }
 
 /* If room doesn't exist creates it then returns it */
@@ -57,15 +58,13 @@ func (h *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 	client.OnAuthorized(func(e proto.Message, u *messages.User) Room {
 
 		event := e.(*protobuf.TheaterLogOnEvent)
-
 		room , err := h.GetOrCreateRoom(string(event.Room))
+
 		if err != nil {
 			_ = client.conn.Close()
 			log.Println("Error while creating or getting the room from cmp: ", err)
 			return nil
 		}
-
-		client.AuthToken = string(event.Token)
 
 		room.Join(client)
 
@@ -73,16 +72,15 @@ func (h *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 	})
 
 	client.OnUnauthorized(func() {
-		_ = client.conn.Close()
-		log.Printf("Authentication failed [%d]. disconnected!", client.Id)
+		buffer, err := protobuf.NewMsgProtobuf(enums.EMSG_UNAUTHORIZED, nil)
+		if err == nil {
+			_ = client.WriteMessage(buffer.Bytes())
+		}
 	})
 
 	/* If Listen breaks then client disconnected. */
 	client.OnLeave(func(room Room) {
-		if client.State != DisconnectedState {
-			if room == nil {
-				return
-			}
+		if room != nil {
 			room.Leave(client)
 		}
 	})
