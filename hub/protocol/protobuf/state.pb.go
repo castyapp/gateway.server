@@ -4,11 +4,11 @@
 package protobuf
 
 import (
-	enums "movie.night.ws.server/hub/protocol/protobuf/enums"
+	enums "github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
 	fmt "fmt"
 	proto "github.com/golang/protobuf/proto"
 	math "math"
-	messages "gitlab.com/movienight1/grpc.proto/messages"
+	messages "github.com/CastyLab/grpc.proto/messages"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.

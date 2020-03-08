@@ -1,8 +1,8 @@
 package http
 
 import (
+	"github.com/CastyLab/grpc.proto/messages"
 	"github.com/gorilla/mux"
-	"gitlab.com/movienight1/grpc.proto/messages"
 	"net/http"
 )
 

@@ -4,8 +4,8 @@ import (
 	"encoding/binary"
 	"github.com/golang/protobuf/proto"
 	"io"
-	"movie.night.ws.server/hub/protocol/protobuf/enums"
-	"movie.night.ws.server/hub/protocol/protobuf/rwu"
+	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
+	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/rwu"
 )
 
 const (

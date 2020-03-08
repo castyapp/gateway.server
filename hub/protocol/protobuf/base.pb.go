@@ -4,7 +4,7 @@
 package protobuf
 
 import (
-	enums "movie.night.ws.server/hub/protocol/protobuf/enums"
+	enums "github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
 	fmt "fmt"
 	proto "github.com/golang/protobuf/proto"
 	timestamp "github.com/golang/protobuf/ptypes/timestamp"

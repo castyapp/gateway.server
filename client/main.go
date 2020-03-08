@@ -1,10 +1,10 @@
 package main
 
 import (
+	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
+	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
 	"github.com/gorilla/websocket"
 	"log"
-	"movie.night.ws.server/hub/protocol/protobuf"
-	"movie.night.ws.server/hub/protocol/protobuf/enums"
 )
 
 func main() {

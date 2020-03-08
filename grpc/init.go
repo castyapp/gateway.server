@@ -2,7 +2,7 @@ package grpc
 
 import (
 	"fmt"
-	"gitlab.com/movienight1/grpc.proto"
+	"github.com/CastyLab/grpc.proto"
 	"google.golang.org/grpc"
 	"log"
 	"os"

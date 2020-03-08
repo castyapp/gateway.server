@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/CastyLab/gateway.server/grpc"
+	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
+	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
+	"github.com/CastyLab/grpc.proto"
+	"github.com/CastyLab/grpc.proto/messages"
 	"github.com/golang/protobuf/ptypes"
-	"gitlab.com/movienight1/grpc.proto"
-	"gitlab.com/movienight1/grpc.proto/messages"
 	"log"
-	"movie.night.ws.server/grpc"
-	"movie.night.ws.server/hub/protocol/protobuf"
-	"movie.night.ws.server/hub/protocol/protobuf/enums"
 	"time"
 )
 

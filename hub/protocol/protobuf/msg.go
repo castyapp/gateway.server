@@ -5,7 +5,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/gorilla/websocket"
 	"io"
-	"movie.night.ws.server/hub/protocol/protobuf/enums"
+	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
 )
 
 type IMsg interface {

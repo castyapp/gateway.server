@@ -3,12 +3,12 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"github.com/CastyLab/gateway.server/grpc"
+	"github.com/CastyLab/gateway.server/hub"
+	"github.com/CastyLab/grpc.proto"
+	"github.com/CastyLab/grpc.proto/messages"
 	"github.com/MrJoshLab/go-respond"
 	_ "github.com/MrJoshLab/go-respond"
-	"gitlab.com/movienight1/grpc.proto"
-	"gitlab.com/movienight1/grpc.proto/messages"
-	"movie.night.ws.server/grpc"
-	"movie.night.ws.server/hub"
 	"net/http"
 	"time"
 )

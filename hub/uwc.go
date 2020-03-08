@@ -1,7 +1,7 @@
 package hub
 
 import (
-	"gitlab.com/movienight1/grpc.proto/messages"
+	"github.com/CastyLab/grpc.proto/messages"
 )
 
 type UserWithClients struct {

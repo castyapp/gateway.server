@@ -3,9 +3,9 @@ package protocol
 import (
 	"bytes"
 	"encoding/binary"
+	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
+	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
 	"github.com/golang/protobuf/proto"
-	"movie.night.ws.server/hub/protocol/protobuf"
-	"movie.night.ws.server/hub/protocol/protobuf/enums"
 )
 
 // Represents an incoming, partially unread message.

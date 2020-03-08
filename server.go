@@ -2,11 +2,11 @@ package main
 
 import (
 	"fmt"
+	wsHttp "github.com/CastyLab/gateway.server/http"
+	"github.com/CastyLab/gateway.server/hub"
 	"github.com/gorilla/mux"
 	_ "github.com/joho/godotenv/autoload"
 	"log"
-	wsHttp "movie.night.ws.server/http"
-	"movie.night.ws.server/hub"
 	"net"
 	"net/http"
 )
