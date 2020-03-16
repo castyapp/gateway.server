@@ -2,20 +2,21 @@ package hub
 
 import (
 	"errors"
+	"log"
+	"net/http"
+
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
 	"github.com/CastyLab/grpc.proto/messages"
 	"github.com/golang/protobuf/proto"
 	"github.com/gorilla/websocket"
 	"github.com/orcaman/concurrent-map"
-	"log"
-	"net/http"
 )
 
 /* Controls a bunch of rooms */
 type UserHub struct {
-	upgrader  websocket.Upgrader
-	cmap cmap.ConcurrentMap
+	upgrader websocket.Upgrader
+	cmap     cmap.ConcurrentMap
 }
 
 /* If room doesn't exist creates it then returns it */

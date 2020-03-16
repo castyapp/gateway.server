@@ -52,20 +52,23 @@ func (r *TheaterRoom) Join(client *Client) {
 	}
 
 	user := response.Result
-	r.updateUserActivity(client)
+	// r.updateUserActivity(client)
 
 	if _, ok := r.members[user.Id]; !ok {
 		uwc := NewUserWithClients(user)
 		uwc.Clients[client.Id] = client
 		r.members[user.Id] = uwc
-		_ = r.updateClientToFriends(client, &protobuf.PersonalStateMsgEvent{
-			User:  client.auth.user,
-			State: enums.EMSG_PERSONAL_STATE_ONLINE,
-		})
+		//_ = r.updateClientToFriends(client, &protobuf.PersonalStateMsgEvent{
+		//	User:  client.auth.user,
+		//	State: enums.EMSG_PERSONAL_STATE_ONLINE,
+		//})
 	} else {
 		r.members[user.Id].Clients[client.Id] = client
 	}
 
+	if err := protobuf.BrodcastMsgProtobuf(client.conn, enums.EMSG_AUTHORIZED, nil); err != nil {
+		log.Println(err)
+	}
 	return
 }
 
@@ -108,8 +111,6 @@ func (r *TheaterRoom) removeUserActivity(client *Client) {
 /* Removes client from room */
 func (r *TheaterRoom) Leave(client *Client) {
 
-	log.Println("Theater disconnected!")
-
 	// removing client from room
 	delete(r.clients, client.Id)
 	delete(r.members[client.auth.user.Id].Clients, client.Id)
@@ -118,17 +119,17 @@ func (r *TheaterRoom) Leave(client *Client) {
 
 	if len(r.members[client.auth.user.Id].Clients) == 0 {
 		delete(r.members, client.auth.user.Id)
-		err := r.updateClientToFriends(client, &protobuf.PersonalStateMsgEvent{
-			User:  client.auth.user,
-			State: enums.EMSG_PERSONAL_STATE_OFFLINE,
-			Activity: &messages.Activity{
-				Id: r.theater.Id,
-				Activity: r.theater.Title,
-			},
-		})
-		if err != nil {
-			log.Println(err)
-		}
+		//err := r.updateClientToFriends(client, &protobuf.PersonalStateMsgEvent{
+		//	User:  client.auth.user,
+		//	State: enums.EMSG_PERSONAL_STATE_OFFLINE,
+		//	Activity: &messages.Activity{
+		//		Id: r.theater.Id,
+		//		Activity: r.theater.Title,
+		//	},
+		//})
+		//if err != nil {
+		//	log.Println(err)
+		//}
 	}
 
 	if len(r.clients) == 0 {

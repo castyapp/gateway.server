@@ -2,17 +2,18 @@ package hub
 
 import (
 	"context"
+	"log"
+	"time"
+
 	"github.com/CastyLab/gateway.server/grpc"
 	"github.com/CastyLab/gateway.server/hub/protocol"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
-	proto2 "github.com/CastyLab/grpc.proto"
+	gRPCproto "github.com/CastyLab/grpc.proto"
 	"github.com/CastyLab/grpc.proto/messages"
 	"github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	"log"
-	"time"
 )
 
 type Room interface {
@@ -22,25 +23,25 @@ type Room interface {
 }
 
 type AuthChan struct {
-	err             error
-	authenticated   bool
-	token           []byte
-	event           proto.Message
-	user            *messages.User
+	err           error
+	authenticated bool
+	token         []byte
+	event         proto.Message
+	user          *messages.User
 }
 
 type Client struct {
-	Id              uint32
-	conn            *websocket.Conn
-	Event           chan *protocol.Packet
+	Id    uint32
+	conn  *websocket.Conn
+	Event chan *protocol.Packet
 
-	onAuthSuccess   func(e proto.Message, u *messages.User) Room
-	onAuthFailed    func()
-	onLeaveRoom     func(room Room)
+	onAuthSuccess func(e proto.Message, u *messages.User) Room
+	onAuthFailed  func()
+	onLeaveRoom   func(room Room)
 
-	authChan        chan AuthChan
-	auth            AuthChan
-	room            Room
+	authChan chan AuthChan
+	auth     AuthChan
+	room     Room
 }
 
 func (c *Client) GetUser() *messages.User {
@@ -50,7 +51,7 @@ func (c *Client) GetUser() *messages.User {
 func (c *Client) OnAuthorized(callback func(e proto.Message, u *messages.User) Room) {
 	go func() {
 		for {
-			if auth := <- c.authChan; auth.authenticated && auth.err == nil {
+			if auth := <-c.authChan; auth.authenticated && auth.err == nil {
 				c.auth = auth
 				c.room = callback(auth.event, auth.user)
 				break
@@ -61,7 +62,7 @@ func (c *Client) OnAuthorized(callback func(e proto.Message, u *messages.User) R
 					log.Printf("Authentication failed [%d]. disconnected!", c.Id)
 				}
 				_ = c.conn.Close()
-				return
+				break
 			}
 		}
 		c.room.HandleEvents(c)
@@ -79,7 +80,7 @@ func (c *Client) IsAuthenticated() bool {
 	return c.auth.authenticated
 }
 
-func (c *Client) OnLeave(cb func(room Room))  {
+func (c *Client) OnLeave(cb func(room Room)) {
 	c.onLeaveRoom = cb
 }
 
@@ -100,7 +101,6 @@ func (c *Client) Listen() {
 
 		mType, data, err := c.conn.ReadMessage()
 		if err != nil {
-			log.Println(err)
 			break
 		}
 
@@ -148,19 +148,19 @@ func (c *Client) Listen() {
 
 func (c *Client) Authentication(token []byte, event proto.Message) {
 	if !c.IsAuthenticated() {
-		mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
-		response, err := grpc.UserServiceClient.GetUser(mCtx, &proto2.AuthenticateRequest{
+		mCtx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+		response, err := grpc.UserServiceClient.GetUser(mCtx, &gRPCproto.AuthenticateRequest{
 			Token: token,
 		})
 
 		if err != nil {
-			c.authChan <- AuthChan{ err: err }
+			c.authChan <- AuthChan{err: err}
 		} else {
 			c.authChan <- AuthChan{
-				user: response.Result,
+				user:          response.Result,
 				authenticated: true,
-				event: event,
-				token: token,
+				event:         event,
+				token:         token,
 			}
 		}
 	}
@@ -173,9 +173,9 @@ func (c *Client) WriteMessage(msg []byte) (err error) {
 
 func NewClient(conn *websocket.Conn) *Client {
 	return &Client{
-		Id:            uuid.New().ID(),
-		conn:          conn,
-		Event:         make(chan *protocol.Packet),
-		authChan:      make(chan AuthChan),
+		Id:       uuid.New().ID(),
+		conn:     conn,
+		Event:    make(chan *protocol.Packet),
+		authChan: make(chan AuthChan),
 	}
 }

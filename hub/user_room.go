@@ -4,28 +4,29 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
+	"time"
+
 	"github.com/CastyLab/gateway.server/grpc"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
-	"github.com/CastyLab/grpc.proto"
+	proto "github.com/CastyLab/grpc.proto"
 	"github.com/CastyLab/grpc.proto/messages"
 	"github.com/golang/protobuf/ptypes"
-	"log"
-	"time"
 )
 
 /* Has a name, clients, count which holds the actual coutn and index which acts as the unique id */
 type UserRoom struct {
-	name       string
-	hub        *UserHub
-	clients    map[uint32] *Client
-	AuthToken  string
-	Friends    []string
+	name      string
+	hub       *UserHub
+	clients   map[uint32]*Client
+	AuthToken string
+	Friends   []string
 }
 
 func (r *UserRoom) ChangeState(state messages.PERSONAL_STATE) {
 	go func() {
-		mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+		mCtx, _ := context.WithTimeout(context.Background(), 10*time.Second)
 		_, _ = grpc.UserServiceClient.UpdateState(mCtx, &proto.UpdateStateRequest{
 			State: state,
 			AuthRequest: &proto.AuthenticateRequest{
@@ -46,8 +47,8 @@ func (r *UserRoom) Join(client *Client) {
 			log.Println(err)
 		}
 		r.updateMeOnFriendsList(&protobuf.PersonalStateMsgEvent{
-			State:    enums.EMSG_PERSONAL_STATE_ONLINE,
-			User:     client.auth.user,
+			State: enums.EMSG_PERSONAL_STATE_ONLINE,
+			User:  client.auth.user,
 		})
 	}
 
@@ -62,8 +63,8 @@ func (r *UserRoom) Leave(client *Client) {
 	if len(r.clients) == 0 {
 		r.ChangeState(messages.PERSONAL_STATE_OFFLINE)
 		r.updateMeOnFriendsList(&protobuf.PersonalStateMsgEvent{
-			State:    enums.EMSG_PERSONAL_STATE_OFFLINE,
-			User:     client.auth.user,
+			State: enums.EMSG_PERSONAL_STATE_OFFLINE,
+			User:  client.auth.user,
 		})
 		r.hub.RemoveRoom(r.name)
 	}
@@ -88,8 +89,8 @@ func (r *UserRoom) SendMessage(message *messages.Message) error {
 		createdAt, _ := ptypes.TimestampProto(time.Now())
 
 		entry := &protobuf.ChatMsgEvent{
-			Message: []byte(message.Content),
-			From: string(from),
+			Message:   []byte(message.Content),
+			From:      string(from),
 			CreatedAt: createdAt,
 		}
 
@@ -150,7 +151,7 @@ func (r *UserRoom) fetchFriends() error {
 
 	r.Friends = make([]string, 0)
 
-	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+	mCtx, _ := context.WithTimeout(context.Background(), 10*time.Second)
 	response, err := grpc.UserServiceClient.GetFriends(mCtx, &proto.AuthenticateRequest{
 		Token: []byte(r.AuthToken),
 	})
@@ -167,11 +168,8 @@ func (r *UserRoom) fetchFriends() error {
 
 /* Handle messages */
 func (r *UserRoom) HandleEvents(client *Client) {
-
 	for {
-
 		if event := <-client.Event; event != nil {
-
 			switch event.EMsg {
 			case enums.EMSG_NEW_CHAT_MESSAGE:
 				if client.IsAuthenticated() {
@@ -181,12 +179,10 @@ func (r *UserRoom) HandleEvents(client *Client) {
 						break
 					}
 
-					log.Println(chatMessage)
-
-					mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+					mCtx, _ := context.WithTimeout(context.Background(), 10*time.Second)
 					response, err := grpc.MessagesServiceClient.CreateMessage(mCtx, &proto.CreateMessageRequest{
 						RecieverId: chatMessage.To,
-						Content: string(chatMessage.Message),
+						Content:    string(chatMessage.Message),
 						AuthRequest: &proto.AuthenticateRequest{
 							Token: client.auth.token,
 						},
@@ -207,10 +203,10 @@ func (r *UserRoom) HandleEvents(client *Client) {
 /* Constructor */
 func NewUserRoom(name string, hub *UserHub) (newRoom *UserRoom) {
 	newRoom = &UserRoom{
-		name:     name,
-		clients:  make(map[uint32] *Client),
-		Friends:  make([]string, 0),
-		hub:      hub,
+		name:    name,
+		clients: make(map[uint32]*Client),
+		Friends: make([]string, 0),
+		hub:     hub,
 	}
 	hub.cmap.Set(name, newRoom)
 	return

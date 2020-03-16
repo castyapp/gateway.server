@@ -2,13 +2,13 @@ package main
 
 import (
 	"fmt"
-	wsHttp "github.com/CastyLab/gateway.server/http"
-	"github.com/CastyLab/gateway.server/hub"
-	"github.com/gorilla/mux"
-	_ "github.com/joho/godotenv/autoload"
 	"log"
 	"net"
 	"net/http"
+
+	"github.com/CastyLab/gateway.server/hub"
+	"github.com/gorilla/mux"
+	_ "github.com/joho/godotenv/autoload"
 )
 
 func main() {
@@ -18,7 +18,7 @@ func main() {
 	var (
 		router     = mux.NewRouter()
 		userhub    = hub.NewUserHub()
-	    theaterhub = hub.NewTheaterHub(userhub)
+		theaterhub = hub.NewTheaterHub(userhub)
 		port       = 3000
 	)
 
@@ -28,11 +28,6 @@ func main() {
 	}
 
 	router.HandleFunc("/user", userhub.Handler).Methods("GET")
-
-	router.HandleFunc("/user/events/{event}", func(w http.ResponseWriter, r *http.Request) {
-		wsHttp.Handler(userhub, w, r)
-	}).Methods("POST")
-
 	router.HandleFunc("/theater", theaterhub.Handler).Methods("GET")
 
 	http.Handle("/", router)
