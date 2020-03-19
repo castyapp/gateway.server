@@ -2,9 +2,6 @@ package hub
 
 import (
 	"context"
-	"log"
-	"time"
-
 	"github.com/CastyLab/gateway.server/grpc"
 	"github.com/CastyLab/gateway.server/hub/protocol"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
@@ -14,6 +11,14 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"log"
+)
+
+type RoomType int
+
+const (
+	UserRoomType     RoomType = 0
+	TheaterRoomType  RoomType = 1
 )
 
 type Room interface {
@@ -22,7 +27,7 @@ type Room interface {
 	Leave(client *Client)
 }
 
-type AuthChan struct {
+type Auth struct {
 	err           error
 	authenticated bool
 	token         []byte
@@ -31,17 +36,17 @@ type AuthChan struct {
 }
 
 type Client struct {
-	Id    uint32
-	conn  *websocket.Conn
-	Event chan *protocol.Packet
-
-	onAuthSuccess func(e proto.Message, u *messages.User) Room
-	onAuthFailed  func()
-	onLeaveRoom   func(room Room)
-
-	authChan chan AuthChan
-	auth     AuthChan
-	room     Room
+	Id             uint32
+	conn           *websocket.Conn
+	Event          chan *protocol.Packet
+	ctx            context.Context
+	onAuthSuccess  func(e proto.Message, u *messages.User) Room
+	onAuthFailed   func()
+	onLeaveRoom    func(room Room)
+	auth           Auth
+	room           Room
+	roomType       RoomType
+	closed         bool
 }
 
 func (c *Client) GetUser() *messages.User {
@@ -49,24 +54,7 @@ func (c *Client) GetUser() *messages.User {
 }
 
 func (c *Client) OnAuthorized(callback func(e proto.Message, u *messages.User) Room) {
-	go func() {
-		for {
-			if auth := <-c.authChan; auth.authenticated && auth.err == nil {
-				c.auth = auth
-				c.room = callback(auth.event, auth.user)
-				break
-			} else {
-				if c.onAuthFailed != nil {
-					c.onAuthFailed()
-				} else {
-					log.Printf("Authentication failed [%d]. disconnected!", c.Id)
-				}
-				_ = c.conn.Close()
-				break
-			}
-		}
-		c.room.HandleEvents(c)
-	}()
+	c.onAuthSuccess = callback
 }
 
 func (c *Client) OnUnauthorized(cb func()) {
@@ -74,9 +62,6 @@ func (c *Client) OnUnauthorized(cb func()) {
 }
 
 func (c *Client) IsAuthenticated() bool {
-	if c == nil {
-		return false
-	}
 	return c.auth.authenticated
 }
 
@@ -84,84 +69,110 @@ func (c *Client) OnLeave(cb func(room Room)) {
 	c.onLeaveRoom = cb
 }
 
+func (c *Client) close()  {
+	// call registered on leave function
+	c.onLeaveRoom(c.room)
+
+	// closing event channel
+	close(c.Event)
+
+	// close websocket connection
+	_ = c.conn.Close()
+	c.closed = true
+
+	log.Printf("Client [%d] disconnected!", c.Id)
+}
+
 func (c *Client) Listen() {
 
-	defer func() {
-		// call registered on leave function
-		c.onLeaveRoom(c.room)
-
-		// closing event channel
-		close(c.Event)
-
-		// close websocket connection
-		_ = c.conn.Close()
-	}()
+	defer c.close()
 
 	for {
+		select {
+		case <-c.ctx.Done():
+			log.Println("Listen Err: ", c.ctx.Err())
+			return
+		default:
 
-		mType, data, err := c.conn.ReadMessage()
-		if err != nil {
-			break
-		}
-
-		if mType != websocket.BinaryMessage {
-			log.Println("Websocket message should be BinaryMessage")
-			continue
-		}
-
-		packet, err := protocol.NewPacket(data)
-		if err != nil {
-			log.Println("Error while creating new packet: ", err)
-			continue
-		}
-
-		if !packet.IsProto {
-			log.Println("Packet type should be Protobuf")
-			continue
-		}
-
-		switch packet.EMsg {
-		case enums.EMSG_LOGON:
-			if !c.IsAuthenticated() {
-				logOnEvent := new(protobuf.LogOnEvent)
-				if err := packet.ReadProtoMsg(logOnEvent); err != nil {
-					log.Println(err)
-					break
-				}
-				c.Authentication(logOnEvent.Token, logOnEvent)
+			if c.closed {
+				_ = c.conn.Close()
+				return
 			}
-		case enums.EMSG_THEATER_LOGON:
-			if !c.IsAuthenticated() {
-				logOnEvent := new(protobuf.TheaterLogOnEvent)
-				if err := packet.ReadProtoMsg(logOnEvent); err != nil {
-					log.Println(err)
-					break
+
+			mType, data, err := c.conn.ReadMessage()
+			if err != nil {
+				return
+			}
+
+			if mType != websocket.BinaryMessage {
+				log.Println("Websocket message should be BinaryMessage")
+				continue
+			}
+
+			packet, err := protocol.NewPacket(data)
+			if err != nil {
+				log.Println("Error while creating new packet: ", err)
+				continue
+			}
+
+			if !packet.IsProto {
+				log.Println("Packet type should be Protobuf")
+				continue
+			}
+
+			switch packet.EMsg {
+			case enums.EMSG_LOGON:
+				if !c.IsAuthenticated() {
+					var logOnEvent proto.Message
+					switch c.roomType {
+					case UserRoomType:
+						logOnEvent = new(protobuf.LogOnEvent)
+					case TheaterRoomType:
+						logOnEvent = new(protobuf.TheaterLogOnEvent)
+					}
+					if err := packet.ReadProtoMsg(logOnEvent); err != nil {
+						log.Println(err)
+						break
+					}
+					c.Authentication(getTokenFromLogOnEvent(logOnEvent), logOnEvent)
 				}
-				c.Authentication(logOnEvent.Token, logOnEvent)
+			}
+			if !c.closed {
+				c.Event <- packet
 			}
 		}
-
-		c.Event <- packet
 	}
+}
 
+func getTokenFromLogOnEvent(event proto.Message) []byte {
+	switch event.(type) {
+	case *protobuf.TheaterLogOnEvent:
+		return event.(*protobuf.TheaterLogOnEvent).Token
+	case *protobuf.LogOnEvent:
+		return event.(*protobuf.LogOnEvent).Token
+	}
+	return nil
 }
 
 func (c *Client) Authentication(token []byte, event proto.Message) {
 	if !c.IsAuthenticated() {
-		mCtx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-		response, err := grpc.UserServiceClient.GetUser(mCtx, &gRPCproto.AuthenticateRequest{
+		response, err := grpc.UserServiceClient.GetUser(c.ctx, &gRPCproto.AuthenticateRequest{
 			Token: token,
 		})
-
 		if err != nil {
-			c.authChan <- AuthChan{err: err}
+			c.auth = Auth{err: err}
+			c.onAuthFailed()
+			return
 		} else {
-			c.authChan <- AuthChan{
+			c.auth = Auth{
 				user:          response.Result,
 				authenticated: true,
 				event:         event,
 				token:         token,
+				err:           nil,
 			}
+			c.room = c.onAuthSuccess(c.auth.event, c.auth.user)
+			go c.room.HandleEvents(c)
 		}
 	}
 }
@@ -171,11 +182,14 @@ func (c *Client) WriteMessage(msg []byte) (err error) {
 	return
 }
 
-func NewClient(conn *websocket.Conn) *Client {
+func NewClient(ctx context.Context, conn *websocket.Conn, rType RoomType) *Client {
 	return &Client{
-		Id:       uuid.New().ID(),
-		conn:     conn,
-		Event:    make(chan *protocol.Packet),
-		authChan: make(chan AuthChan),
+		Id:        uuid.New().ID(),
+		conn:      conn,
+		ctx:       ctx,
+		Event:     make(chan *protocol.Packet),
+		auth:      Auth{},
+		roomType:  rType,
+		closed:    false,
 	}
 }

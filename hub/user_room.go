@@ -25,15 +25,13 @@ type UserRoom struct {
 }
 
 func (r *UserRoom) ChangeState(state messages.PERSONAL_STATE) {
-	go func() {
-		mCtx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-		_, _ = grpc.UserServiceClient.UpdateState(mCtx, &proto.UpdateStateRequest{
-			State: state,
-			AuthRequest: &proto.AuthenticateRequest{
-				Token: []byte(r.AuthToken),
-			},
-		})
-	}()
+	mCtx, _ := context.WithTimeout(r.hub.ctx, 10*time.Second)
+	_, _ = grpc.UserServiceClient.UpdateState(mCtx, &proto.UpdateStateRequest{
+		State: state,
+		AuthRequest: &proto.AuthenticateRequest{
+			Token: []byte(r.AuthToken),
+		},
+	})
 }
 
 /* Add a conn to clients map so that it can be managed */
@@ -94,7 +92,7 @@ func (r *UserRoom) SendMessage(message *messages.Message) error {
 			CreatedAt: createdAt,
 		}
 
-		buffer, err := protobuf.NewMsgProtobuf(enums.EMSG_CHAT_MESSAGE, entry)
+		buffer, err := protobuf.NewMsgProtobuf(enums.EMSG_CHAT_MESSAGES, entry)
 		if err != nil {
 			return err
 		}
@@ -141,7 +139,10 @@ func (r *UserRoom) updateMeOnFriendsList(psme *protobuf.PersonalStateMsgEvent) {
 				continue
 			}
 
-			_ = friendRoom.Send(buffer.Bytes())
+			if err := friendRoom.Send(buffer.Bytes()); err != nil {
+				log.Println(err)
+				continue
+			}
 		}
 	}
 
@@ -151,7 +152,7 @@ func (r *UserRoom) fetchFriends() error {
 
 	r.Friends = make([]string, 0)
 
-	mCtx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+	mCtx, _ := context.WithTimeout(r.hub.ctx, 10*time.Second)
 	response, err := grpc.UserServiceClient.GetFriends(mCtx, &proto.AuthenticateRequest{
 		Token: []byte(r.AuthToken),
 	})
@@ -169,31 +170,37 @@ func (r *UserRoom) fetchFriends() error {
 /* Handle messages */
 func (r *UserRoom) HandleEvents(client *Client) {
 	for {
-		if event := <-client.Event; event != nil {
-			switch event.EMsg {
-			case enums.EMSG_NEW_CHAT_MESSAGE:
-				if client.IsAuthenticated() {
-					chatMessage := new(protobuf.ChatMsgEvent)
-					if err := event.ReadProtoMsg(chatMessage); err != nil {
-						log.Println(err)
-						break
+		select {
+		case <-r.hub.ctx.Done():
+			log.Println("UserRoom HandleEvents Err: ", r.hub.ctx.Err())
+			return
+		case event := <-client.Event:
+			if event != nil {
+				switch event.EMsg {
+				case enums.EMSG_NEW_CHAT_MESSAGE:
+					if client.IsAuthenticated() {
+						chatMessage := new(protobuf.ChatMsgEvent)
+						if err := event.ReadProtoMsg(chatMessage); err != nil {
+							log.Println(err)
+							break
+						}
+
+						mCtx, _ := context.WithTimeout(r.hub.ctx, 10 * time.Second)
+						response, err := grpc.MessagesServiceClient.CreateMessage(mCtx, &proto.CreateMessageRequest{
+							RecieverId: chatMessage.To,
+							Content:    string(chatMessage.Message),
+							AuthRequest: &proto.AuthenticateRequest{
+								Token: client.auth.token,
+							},
+						})
+
+						if err != nil {
+							log.Println(err)
+							break
+						}
+
+						_ = r.SendMessage(response.Result)
 					}
-
-					mCtx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-					response, err := grpc.MessagesServiceClient.CreateMessage(mCtx, &proto.CreateMessageRequest{
-						RecieverId: chatMessage.To,
-						Content:    string(chatMessage.Message),
-						AuthRequest: &proto.AuthenticateRequest{
-							Token: client.auth.token,
-						},
-					})
-
-					if err != nil {
-						log.Println(err)
-						break
-					}
-
-					_ = r.SendMessage(response.Result)
 				}
 			}
 		}

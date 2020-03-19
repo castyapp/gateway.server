@@ -7,7 +7,6 @@ import (
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
 	"github.com/CastyLab/grpc.proto"
 	"github.com/CastyLab/grpc.proto/messages"
-	"github.com/google/uuid"
 	"log"
 	"time"
 )
@@ -25,23 +24,12 @@ func (r *TheaterRoom) GetClients() map[uint32] *Client {
 	return r.clients
 }
 
-func (r *TheaterRoom) GetMembers() (members []messages.User) {
-	for _, member := range r.members {
-		members = append(members, member.User)
-	}
-	return
-}
-
-func (r *TheaterRoom) generateRandomClientId() uint32 {
-	return uuid.New().ID()
-}
-
 /* Add a conn to clients map so that it can be managed */
 func (r *TheaterRoom) Join(client *Client) {
 
 	r.clients[client.Id] = client
 
-	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+	mCtx, _ := context.WithTimeout(r.hub.ctx, 10 * time.Second)
 	response, err := grpc.UserServiceClient.GetUser(mCtx, &proto.AuthenticateRequest{
 		Token: client.auth.token,
 	})
@@ -58,54 +46,65 @@ func (r *TheaterRoom) Join(client *Client) {
 		uwc := NewUserWithClients(user)
 		uwc.Clients[client.Id] = client
 		r.members[user.Id] = uwc
-		//_ = r.updateClientToFriends(client, &protobuf.PersonalStateMsgEvent{
-		//	User:  client.auth.user,
-		//	State: enums.EMSG_PERSONAL_STATE_ONLINE,
-		//})
+		_ = r.updateClientToFriends(client, &protobuf.PersonalStateMsgEvent{
+			User:  client.auth.user,
+			State: enums.EMSG_PERSONAL_STATE_ONLINE,
+		})
 	} else {
 		r.members[user.Id].Clients[client.Id] = client
 	}
 
+	// sending members through socket
+	members := &protobuf.TheaterMembers{Members: r.getMembers()}
+	if err := protobuf.BrodcastMsgProtobuf(client.conn, enums.EMSG_THEATER_MEMBERS, members); err != nil {
+		log.Println(err)
+	}
+
+	// sending authentication succeed
 	if err := protobuf.BrodcastMsgProtobuf(client.conn, enums.EMSG_AUTHORIZED, nil); err != nil {
 		log.Println(err)
+	}
+
+	return
+}
+
+func (r *TheaterRoom) getMembers() (members []*messages.User) {
+	for _, member := range r.members {
+		members = append(members, &member.User)
 	}
 	return
 }
 
 func (r *TheaterRoom) updateUserActivity(client *Client) {
-	go func() {
-		mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
-		_, _ = grpc.TheaterServiceClient.AddMember(mCtx, &proto.AddOrRemoveMemberRequest{
-			TheaterId: r.theater.Id,
-			AuthRequest: &proto.AuthenticateRequest{
-				Token: client.auth.token,
-			},
-		})
-		_, _ = grpc.UserServiceClient.UpdateActivity(mCtx, &proto.UpdateActivityRequest{
-			Activity: &messages.Activity{
-				Id:       r.theater.Id,
-				Activity: r.theater.Title,
-			},
-			AuthRequest: &proto.AuthenticateRequest{
-				Token: client.auth.token,
-			},
-		})
-	}()
+	mCtx, _ := context.WithTimeout(r.hub.ctx, 10 * time.Second)
+	_, _ = grpc.TheaterServiceClient.AddMember(mCtx, &proto.AddOrRemoveMemberRequest{
+		TheaterId: r.theater.Id,
+		AuthRequest: &proto.AuthenticateRequest{
+			Token: client.auth.token,
+		},
+	})
+	_, _ = grpc.UserServiceClient.UpdateActivity(mCtx, &proto.UpdateActivityRequest{
+		Activity: &messages.Activity{
+			Id:       r.theater.Id,
+			Activity: r.theater.Title,
+		},
+		AuthRequest: &proto.AuthenticateRequest{
+			Token: client.auth.token,
+		},
+	})
 }
 
 func (r *TheaterRoom) removeUserActivity(client *Client) {
-	go func() {
-		mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
-		_, _ = grpc.TheaterServiceClient.RemoveMember(mCtx, &proto.AddOrRemoveMemberRequest{
-			TheaterId: r.theater.Id,
-			AuthRequest: &proto.AuthenticateRequest{
-				Token: client.auth.token,
-			},
-		})
-		_, _ = grpc.UserServiceClient.RemoveActivity(mCtx, &proto.AuthenticateRequest{
+	mCtx, _ := context.WithTimeout(r.hub.ctx, 10 * time.Second)
+	_, _ = grpc.TheaterServiceClient.RemoveMember(mCtx, &proto.AddOrRemoveMemberRequest{
+		TheaterId: r.theater.Id,
+		AuthRequest: &proto.AuthenticateRequest{
 			Token: client.auth.token,
-		})
-	}()
+		},
+	})
+	_, _ = grpc.UserServiceClient.RemoveActivity(mCtx, &proto.AuthenticateRequest{
+		Token: client.auth.token,
+	})
 }
 
 /* Removes client from room */
@@ -119,17 +118,13 @@ func (r *TheaterRoom) Leave(client *Client) {
 
 	if len(r.members[client.auth.user.Id].Clients) == 0 {
 		delete(r.members, client.auth.user.Id)
-		//err := r.updateClientToFriends(client, &protobuf.PersonalStateMsgEvent{
-		//	User:  client.auth.user,
-		//	State: enums.EMSG_PERSONAL_STATE_OFFLINE,
-		//	Activity: &messages.Activity{
-		//		Id: r.theater.Id,
-		//		Activity: r.theater.Title,
-		//	},
-		//})
-		//if err != nil {
-		//	log.Println(err)
-		//}
+		err := r.updateClientToFriends(client, &protobuf.PersonalStateMsgEvent{
+			User:  client.auth.user,
+			State: enums.EMSG_PERSONAL_STATE_OFFLINE,
+		})
+		if err != nil {
+			log.Println(err)
+		}
 	}
 
 	if len(r.clients) == 0 {
@@ -171,7 +166,7 @@ func (r *TheaterRoom) BroadcastEx(senderid uint32, msg []byte) (err error) {
 }
 
 func (r *TheaterRoom) updateClientToFriends(client *Client, msg *protobuf.PersonalStateMsgEvent) error {
-	buffer, err := protobuf.NewMsgProtobuf(enums.EMSG_THEATER_UPDATE_USER, msg)
+	buffer, err := protobuf.NewMsgProtobuf(enums.EMSG_MEMBER_STATE_CHANGED, msg)
 	if err != nil {
 		return err
 	}
@@ -184,7 +179,15 @@ func (r *TheaterRoom) updateClientToFriends(client *Client, msg *protobuf.Person
 			Activity: r.theater.Title,
 		}
 	}
-	_ = r.updateMyActivity(client, pmae)
+	//_ = r.updateMyActivity(client, pmae)
+	return r.BroadcastEx(client.Id, buffer.Bytes())
+}
+
+func (r *TheaterRoom) sendMessageToMemebers(client *Client, event *protobuf.ChatMsgEvent) error {
+	buffer, err := protobuf.NewMsgProtobuf(enums.EMSG_CHAT_MESSAGES, event)
+	if err != nil {
+		return err
+	}
 	return r.BroadcastEx(client.Id, buffer.Bytes())
 }
 
@@ -200,15 +203,33 @@ func (r *TheaterRoom) updateMyActivity(client *Client, msg *protobuf.PersonalAct
 /* Handle messages */
 func (r *TheaterRoom) HandleEvents(client *Client) {
 	for {
-		if event := <-client.Event; event != nil {
-			// events of theater room
+		select {
+		case <-r.hub.ctx.Done():
+			log.Println("TheaterRoom HandleEvents Err: ", r.hub.ctx.Err())
+			return
+		case event := <-client.Event:
+			if event != nil {
+				switch event.EMsg {
+				case enums.EMSG_NEW_CHAT_MESSAGE:
+					if client.IsAuthenticated() {
+						chatMessage := new(protobuf.ChatMsgEvent)
+						if err := event.ReadProtoMsg(chatMessage); err != nil {
+							log.Println(err)
+							break
+						}
+						chatMessage.User = client.GetUser()
+						_ = r.sendMessageToMemebers(client, chatMessage)
+					}
+				}
+
+			}
 		}
 	}
 }
 
 /* Constructor */
 func NewTheaterRoom(name string, hub *TheaterHub) (room *TheaterRoom, err error) {
-	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+	mCtx, _ := context.WithTimeout(hub.ctx, 10 * time.Second)
 	response, err := grpc.TheaterServiceClient.GetTheater(mCtx, &messages.Theater{
 		Id: name,
 	})

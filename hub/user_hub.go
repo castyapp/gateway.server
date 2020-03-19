@@ -1,7 +1,9 @@
 package hub
 
 import (
+	"context"
 	"errors"
+	"github.com/getsentry/sentry-go"
 	"log"
 	"net/http"
 
@@ -17,6 +19,7 @@ import (
 type UserHub struct {
 	upgrader websocket.Upgrader
 	cmap     cmap.ConcurrentMap
+	ctx      context.Context
 }
 
 /* If room doesn't exist creates it then returns it */
@@ -43,13 +46,16 @@ func (h *UserHub) RemoveRoom(name string) {
 /* Get ws conn. and hands it over to correct room */
 func (h *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
 
+	h.ctx = req.Context()
+
 	conn, err := h.upgrader.Upgrade(w, req, nil)
 	if err != nil {
+		sentry.CaptureException(err)
 		log.Println("upgrade:", err)
 		return
 	}
 
-	client := NewClient(conn)
+	client := NewClient(h.ctx, conn, UserRoomType)
 
 	client.OnAuthorized(func(e proto.Message, u *messages.User) Room {
 		event := e.(*protobuf.LogOnEvent)
@@ -64,6 +70,7 @@ func (h *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
 		if err == nil {
 			_ = client.WriteMessage(buffer.Bytes())
 		}
+		client.closed = true
 	})
 
 	client.OnLeave(func(room Room) {

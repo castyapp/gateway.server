@@ -13,14 +13,14 @@ enum EMSG {
     INVALID                    = 0;
     LOGON                      = 1;
     LOGOUT                     = 2;
-    CHAT_MESSAGE               = 3;
-    THEATER_ONLINE_USERS       = 4;
-    THEATER_UPDATE_USER        = 5;
-    PERSONAL_STATE_CHANGED     = 6;
-    PERSONAL_ACTIVITY_CHANGED  = 7;
-    THEATER_LOGON              = 8;
-    THEATER_LOGOUT             = 9;
-    AUTHORIZED                 = 10;
-    UNAUTHORIZED               = 11;
-    NEW_CHAT_MESSAGE           = 12;
+    PERSONAL_STATE_CHANGED     = 3;
+    PERSONAL_ACTIVITY_CHANGED  = 4;
+    AUTHORIZED                 = 5;
+    UNAUTHORIZED               = 6;
+    CHAT_MESSAGES              = 7;
+    LOG_MESSAGES               = 8;
+    NEW_CHAT_MESSAGE           = 9;
+    NEW_LOG_MESSAGE            = 10;
+    MEMBER_STATE_CHANGED       = 11;
+    THEATER_MEMBERS            = 12;
 }

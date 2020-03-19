@@ -2,10 +2,10 @@ package protobuf
 
 import (
 	"encoding/binary"
-	"github.com/golang/protobuf/proto"
-	"io"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/rwu"
+	"github.com/golang/protobuf/proto"
+	"io"
 )
 
 const (

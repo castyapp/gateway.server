@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"context"
 	"errors"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
@@ -14,6 +15,7 @@ import (
 
 /* Controls a bunch of rooms */
 type TheaterHub struct {
+	ctx       context.Context
 	upgrader  websocket.Upgrader
 	userHub   *UserHub
 	cmap      cmap.ConcurrentMap
@@ -47,13 +49,15 @@ func (h *TheaterHub) RemoveRoom(name string) {
 /* Get ws conn. and hands it over to correct room */
 func (h *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 
+	h.ctx = req.Context()
+
 	conn, err := h.upgrader.Upgrade(w, req, nil)
 	if err != nil {
 		log.Println("upgrade:", err)
 		return
 	}
 
-	client := NewClient(conn)
+	client := NewClient(h.ctx, conn, TheaterRoomType)
 
 	client.OnAuthorized(func(e proto.Message, u *messages.User) Room {
 
@@ -76,9 +80,9 @@ func (h *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 		if err == nil {
 			_ = client.WriteMessage(buffer.Bytes())
 		}
+		client.closed = true
 	})
 
-	/* If Listen breaks then client disconnected. */
 	client.OnLeave(func(room Room) {
 		if room != nil {
 			room.Leave(client)
