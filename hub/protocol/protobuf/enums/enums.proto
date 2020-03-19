@@ -23,4 +23,6 @@ enum EMSG {
     NEW_LOG_MESSAGE            = 10;
     MEMBER_STATE_CHANGED       = 11;
     THEATER_MEMBERS            = 12;
+    THEATER_PLAY               = 13;
+    THEATER_PAUSE              = 14;
 }

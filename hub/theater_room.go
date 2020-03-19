@@ -7,6 +7,7 @@ import (
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
 	"github.com/CastyLab/grpc.proto"
 	"github.com/CastyLab/grpc.proto/messages"
+	gRPCproto "github.com/golang/protobuf/proto"
 	"log"
 	"time"
 )
@@ -54,14 +55,14 @@ func (r *TheaterRoom) Join(client *Client) {
 		r.members[user.Id].Clients[client.Id] = client
 	}
 
-	// sending members through socket
-	members := &protobuf.TheaterMembers{Members: r.getMembers()}
-	if err := protobuf.BrodcastMsgProtobuf(client.conn, enums.EMSG_THEATER_MEMBERS, members); err != nil {
+	// sending authentication succeed
+	if err := protobuf.BrodcastMsgProtobuf(client.conn, enums.EMSG_AUTHORIZED, nil); err != nil {
 		log.Println(err)
 	}
 
-	// sending authentication succeed
-	if err := protobuf.BrodcastMsgProtobuf(client.conn, enums.EMSG_AUTHORIZED, nil); err != nil {
+	// sending members through socket
+	members := &protobuf.TheaterMembers{Members: r.getMembers()}
+	if err := protobuf.BrodcastMsgProtobuf(client.conn, enums.EMSG_THEATER_MEMBERS, members); err != nil {
 		log.Println(err)
 	}
 
@@ -165,6 +166,14 @@ func (r *TheaterRoom) BroadcastEx(senderid uint32, msg []byte) (err error) {
 	return
 }
 
+func (r *TheaterRoom) BroadcastProtoToAllEx(client *Client, enum enums.EMSG, pMsg gRPCproto.Message) error {
+	buffer, err := protobuf.NewMsgProtobuf(enum, pMsg)
+	if err != nil {
+		return err
+	}
+	return r.BroadcastEx(client.Id, buffer.Bytes())
+}
+
 func (r *TheaterRoom) updateClientToFriends(client *Client, msg *protobuf.PersonalStateMsgEvent) error {
 	buffer, err := protobuf.NewMsgProtobuf(enums.EMSG_MEMBER_STATE_CHANGED, msg)
 	if err != nil {
@@ -210,6 +219,24 @@ func (r *TheaterRoom) HandleEvents(client *Client) {
 		case event := <-client.Event:
 			if event != nil {
 				switch event.EMsg {
+				case enums.EMSG_THEATER_PLAY:
+					if client.IsAuthenticated() {
+						theaterVideoPlayer := new(protobuf.TheaterVideoPlayer)
+						if err := event.ReadProtoMsg(theaterVideoPlayer); err != nil {
+							log.Println(err)
+							break
+						}
+						_ = r.BroadcastProtoToAllEx(client, enums.EMSG_THEATER_PLAY, theaterVideoPlayer)
+					}
+				case enums.EMSG_THEATER_PAUSE:
+					if client.IsAuthenticated() {
+						theaterVideoPlayer := new(protobuf.TheaterVideoPlayer)
+						if err := event.ReadProtoMsg(theaterVideoPlayer); err != nil {
+							log.Println(err)
+							break
+						}
+						_ = r.BroadcastProtoToAllEx(client, enums.EMSG_THEATER_PAUSE, theaterVideoPlayer)
+					}
 				case enums.EMSG_NEW_CHAT_MESSAGE:
 					if client.IsAuthenticated() {
 						chatMessage := new(protobuf.ChatMsgEvent)

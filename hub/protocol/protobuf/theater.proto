@@ -1,0 +1,13 @@
+syntax = "proto3";
+package protobuf;
+
+import "google/protobuf/timestamp.proto";
+
+message TheaterVideoPlayer {
+    string  theater_id    = 1;
+    string  source        = 2;
+    string  poster        = 3;
+    float   current_time  = 4;
+    string  user_id       = 5;
+    google.protobuf.Timestamp sent_at = 6;
+}

@@ -3,6 +3,8 @@ github.com/AndreasBriese/bbloom v0.0.0-20190306092124-e2d15f34fcf9/go.mod h1:bOv
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/CastyLab/grpc.proto v0.0.0-20200316093946-145cc02d4b77 h1:dLqqm6bpIBgJhzr+MDWKU/DK2Q1W35/JTjO3mSZv2hU=
 github.com/CastyLab/grpc.proto v0.0.0-20200316093946-145cc02d4b77/go.mod h1:H8BUyWFVY3G5A/hRa6Iejx8OtKrkDPm3AjGCwL90dpY=
+github.com/CastyLab/grpc.proto v0.0.0-20200319121737-a97a0d52ae0f h1:GDcZA1yvvez4s7P4jNtTl3PK/zegn2e2ynHQ5CeIXgQ=
+github.com/CastyLab/grpc.proto v0.0.0-20200319121737-a97a0d52ae0f/go.mod h1:H8BUyWFVY3G5A/hRa6Iejx8OtKrkDPm3AjGCwL90dpY=
 github.com/CloudyKit/fastprinter v0.0.0-20170127035650-74b38d55f37a/go.mod h1:EFZQ978U7x8IRnstaskI3IysnWY5Ao3QgZUKOXlsAdw=
 github.com/CloudyKit/jet v2.1.3-0.20180809161101-62edd43e4f88+incompatible/go.mod h1:HPYO+50pSWkPoj9Q/eq0aRGByCL6ScRlUmiEX5Zgm+w=
 github.com/Joker/hpp v1.0.0/go.mod h1:8x5n+M1Hp5hC0g8okX3sR3vFQwynaX/UgSOM9MeBKzY=
