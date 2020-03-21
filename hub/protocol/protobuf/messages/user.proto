@@ -17,17 +17,20 @@ message Activity {
 }
 
 message User {
-    string           id          = 1;
-    string           fullname    = 2;
-    string           username    = 3;
-    string           hash        = 4;
-    string           email       = 5;
-    string           password    = 6;
-    bool             is_active   = 7;
-    string           avatar      = 8;
-    Activity         activity    = 9;
-    PERSONAL_STATE   state       = 10;
-    google.protobuf.Timestamp  last_login  = 11;
-    google.protobuf.Timestamp  joined_at   = 12;
-    google.protobuf.Timestamp  updated_at  = 13;
+    string           id                    = 1;
+    string           fullname              = 2;
+    string           username              = 3;
+    string           hash                  = 4;
+    string           email                 = 5;
+    string           password              = 6;
+    bool             is_active             = 7;
+    bool             email_verified        = 8;
+    bool             is_staff              = 9;
+    bool             verified              = 10;
+    string           avatar                = 11;
+    Activity         activity              = 12;
+    PERSONAL_STATE   state                 = 13;
+    google.protobuf.Timestamp  last_login  = 14;
+    google.protobuf.Timestamp  joined_at   = 15;
+    google.protobuf.Timestamp  updated_at  = 16;
 }

@@ -32,6 +32,8 @@ func main() {
 		port       = 3000
 	)
 
+	defer userhub.Close()
+
 	unixListener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		sentry.CaptureException(err)

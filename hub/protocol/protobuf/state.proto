@@ -4,6 +4,10 @@ package protobuf;
 import "enums/enums.proto";
 import "messages/user.proto";
 
+message PingMsgEvent {
+    enums.EMSG_PERSONAL_STATE state = 1;
+}
+
 message PersonalStateMsgEvent {
     messages.User               user      = 1;
     enums.EMSG_PERSONAL_STATE   state     = 2;

@@ -3,9 +3,12 @@ package hub
 import (
 	"context"
 	"errors"
+	"github.com/CastyLab/gateway.server/grpc"
+	proto2 "github.com/CastyLab/grpc.proto"
 	"github.com/getsentry/sentry-go"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
@@ -41,6 +44,30 @@ func (h *UserHub) GetOrCreateRoom(name string) (room *UserRoom) {
 func (h *UserHub) RemoveRoom(name string) {
 	h.cmap.Remove(name)
 	return
+}
+
+func (h *UserHub) RollbackUsersStatesToOffline()  {
+	usersIds := make([]string, 0)
+	for uId := range h.cmap.Items() {
+		usersIds = append(usersIds, uId)
+	}
+	if len(usersIds) > 0 {
+		mCtx, _ := context.WithTimeout(h.ctx, 5 * time.Second)
+		response, err := grpc.UserServiceClient.RollbackStates(mCtx, &proto2.RollbackStatesRequest{
+			UsersIds: usersIds,
+		})
+		if err != nil {
+			sentry.CaptureException(err)
+			log.Fatal(err)
+		}
+		if response.Code == http.StatusOK {
+			log.Fatal("Rolled back online users state to Offline successfully!")
+		}
+	}
+}
+
+func (h *UserHub) Close() {
+	h.RollbackUsersStatesToOffline()
 }
 
 /* Get ws conn. and hands it over to correct room */

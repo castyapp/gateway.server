@@ -12,13 +12,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"log"
+	"time"
 )
 
 type RoomType int
 
 const (
-	UserRoomType     RoomType = 0
-	TheaterRoomType  RoomType = 1
+	pingPeriod = 6 * time.Minute
+	UserRoomType       RoomType = 0
+	TheaterRoomType    RoomType = 1
 )
 
 type Room interface {
@@ -40,6 +42,7 @@ type Client struct {
 	conn           *websocket.Conn
 	Event          chan *protocol.Packet
 	ctx            context.Context
+	ctxCancel      context.CancelFunc
 	onAuthSuccess  func(e proto.Message, u *messages.User) Room
 	onAuthFailed   func()
 	onLeaveRoom    func(room Room)
@@ -47,6 +50,8 @@ type Client struct {
 	room           Room
 	roomType       RoomType
 	closed         bool
+	pingChan       chan struct{}
+	lastPingAt     time.Time
 }
 
 func (c *Client) GetUser() *messages.User {
@@ -69,7 +74,7 @@ func (c *Client) OnLeave(cb func(room Room)) {
 	c.onLeaveRoom = cb
 }
 
-func (c *Client) close()  {
+func (c *Client) close() {
 	// call registered on leave function
 	c.onLeaveRoom(c.room)
 
@@ -83,65 +88,104 @@ func (c *Client) close()  {
 	log.Printf("Client [%d] disconnected!", c.Id)
 }
 
+func (c *Client) PingHandler() {
+	for {
+		select {
+		case <-c.pingChan:
+			c.lastPingAt = time.Now()
+		case <-c.ctx.Done():
+			log.Println("Exit ping handler!")
+			return
+		default:
+			if c.lastPingAt.Second() != 0 {
+				diffDuration := time.Now().Sub(c.lastPingAt)
+				diff := diffDuration.Round(time.Minute)
+				if diff > pingPeriod {
+					log.Println("Didn't got ping request from client in last 6 minutes!")
+					c.ctxCancel()
+				}
+			}
+		}
+	}
+}
+
 func (c *Client) Listen() {
 
 	defer c.close()
 
-	for {
-		select {
-		case <-c.ctx.Done():
-			log.Println("Listen Err: ", c.ctx.Err())
-			return
-		default:
+	go func() {
 
-			if c.closed {
-				_ = c.conn.Close()
+		for {
+			select {
+			case <-c.ctx.Done():
+				log.Println("Listen Err: ", c.ctx.Err())
 				return
-			}
+			default:
 
-			mType, data, err := c.conn.ReadMessage()
-			if err != nil {
-				return
-			}
+				if c.closed {
+					_ = c.conn.Close()
+					return
+				}
 
-			if mType != websocket.BinaryMessage {
-				log.Println("Websocket message should be BinaryMessage")
-				continue
-			}
-
-			packet, err := protocol.NewPacket(data)
-			if err != nil {
-				log.Println("Error while creating new packet: ", err)
-				continue
-			}
-
-			if !packet.IsProto {
-				log.Println("Packet type should be Protobuf")
-				continue
-			}
-
-			switch packet.EMsg {
-			case enums.EMSG_LOGON:
-				if !c.IsAuthenticated() {
-					var logOnEvent proto.Message
-					switch c.roomType {
-					case UserRoomType:
-						logOnEvent = new(protobuf.LogOnEvent)
-					case TheaterRoomType:
-						logOnEvent = new(protobuf.TheaterLogOnEvent)
+				mType, data, err := c.conn.ReadMessage()
+				if err != nil {
+					switch err.(type) {
+					case *websocket.CloseError:
+						c.ctxCancel()
+						log.Println("Closed", err)
 					}
-					if err := packet.ReadProtoMsg(logOnEvent); err != nil {
-						log.Println(err)
-						break
+					return
+				}
+
+				if mType == websocket.PingMessage {
+					c.pingChan <- struct{}{}
+					continue
+				}
+
+				if mType != websocket.BinaryMessage {
+					log.Println("Websocket message should be BinaryMessage")
+					continue
+				}
+
+				packet, err := protocol.NewPacket(data)
+				if err != nil {
+					log.Println("Error while creating new packet: ", err)
+					continue
+				}
+
+				if !packet.IsProto {
+					log.Println("Packet type should be Protobuf")
+					continue
+				}
+
+				switch packet.EMsg {
+				case enums.EMSG_PING:
+					c.pingChan <- struct{}{}
+				case enums.EMSG_LOGON:
+					if !c.IsAuthenticated() {
+						var logOnEvent proto.Message
+						switch c.roomType {
+						case UserRoomType:
+							logOnEvent = new(protobuf.LogOnEvent)
+						case TheaterRoomType:
+							logOnEvent = new(protobuf.TheaterLogOnEvent)
+						}
+						if err := packet.ReadProtoMsg(logOnEvent); err != nil {
+							log.Println(err)
+							break
+						}
+						c.Authentication(getTokenFromLogOnEvent(logOnEvent), logOnEvent)
 					}
-					c.Authentication(getTokenFromLogOnEvent(logOnEvent), logOnEvent)
+				}
+				if !c.closed {
+					c.Event <- packet
 				}
 			}
-			if !c.closed {
-				c.Event <- packet
-			}
 		}
-	}
+
+	}()
+
+	c.PingHandler()
 }
 
 func getTokenFromLogOnEvent(event proto.Message) []byte {
@@ -183,13 +227,16 @@ func (c *Client) WriteMessage(msg []byte) (err error) {
 }
 
 func NewClient(ctx context.Context, conn *websocket.Conn, rType RoomType) *Client {
+	mCtx, cancelFunc := context.WithCancel(ctx)
 	return &Client{
 		Id:        uuid.New().ID(),
 		conn:      conn,
-		ctx:       ctx,
+		ctx:       mCtx,
+		ctxCancel: cancelFunc,
 		Event:     make(chan *protocol.Packet),
 		auth:      Auth{},
 		roomType:  rType,
 		closed:    false,
+		pingChan:  make(chan struct{}),
 	}
 }

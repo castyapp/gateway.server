@@ -17,6 +17,4 @@ WORKDIR /code
 # build project
 RUN go build -o casty.gateway.server .
 
-EXPOSE 3000
-
 CMD ["./casty.gateway.server"]

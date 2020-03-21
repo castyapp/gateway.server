@@ -11,18 +11,23 @@ enum EMSG_PERSONAL_STATE {
 
 enum EMSG {
     INVALID                    = 0;
-    LOGON                      = 1;
-    LOGOUT                     = 2;
-    PERSONAL_STATE_CHANGED     = 3;
-    PERSONAL_ACTIVITY_CHANGED  = 4;
-    AUTHORIZED                 = 5;
-    UNAUTHORIZED               = 6;
-    CHAT_MESSAGES              = 7;
-    LOG_MESSAGES               = 8;
-    NEW_CHAT_MESSAGE           = 9;
-    NEW_LOG_MESSAGE            = 10;
-    MEMBER_STATE_CHANGED       = 11;
-    THEATER_MEMBERS            = 12;
-    THEATER_PLAY               = 13;
-    THEATER_PAUSE              = 14;
+    PING                       = 1;
+    PONG                       = 2;
+    LOGON                      = 3;
+    LOGOUT                     = 4;
+    PERSONAL_STATE_CHANGED     = 5;
+    PERSONAL_ACTIVITY_CHANGED  = 6;
+    AUTHORIZED                 = 7;
+    UNAUTHORIZED               = 8;
+    CHAT_MESSAGES              = 9;
+    LOG_MESSAGES               = 10;
+    NEW_CHAT_MESSAGE           = 11;
+    NEW_LOG_MESSAGE            = 12;
+    MEMBER_STATE_CHANGED       = 13;
+    THEATER_MEMBERS            = 14;
+    THEATER_PLAY               = 15;
+    THEATER_PAUSE              = 16;
+    NEW_NOTIFICATION           = 17;
+    UPDATED_NOTIFICATION       = 18;
+    READ_ALL_NOTIFICATIONS     = 19;
 }
