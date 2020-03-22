@@ -8,6 +8,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"log"
 	"net/http"
+	"reflect"
 	"time"
 
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
@@ -75,10 +76,23 @@ func (h *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
 
 	h.ctx = req.Context()
 
+	subprotos := websocket.Subprotocols(req)
+	if !reflect.DeepEqual(subprotos, h.upgrader.Subprotocols) {
+		log.Printf("subprotols=%v, want %v", subprotos, h.upgrader.Subprotocols)
+		http.Error(w, "bad protocol", http.StatusBadRequest)
+		return
+	}
+
 	conn, err := h.upgrader.Upgrade(w, req, nil)
 	if err != nil {
 		sentry.CaptureException(err)
 		log.Println("upgrade:", err)
+		return
+	}
+
+	if conn.Subprotocol() != "cp0" {
+		log.Printf("Subprotocol() = %s, want cp0", conn.Subprotocol())
+		conn.Close()
 		return
 	}
 
@@ -111,14 +125,8 @@ func (h *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
 
 /* Constructor */
 func NewUserHub() *UserHub {
-	hub := new(UserHub)
-	hub.cmap = cmap.New()
-	hub.upgrader = websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
-		CheckOrigin: func(r *http.Request) bool {
-			return true
-		},
+	return &UserHub{
+		cmap: cmap.New(),
+		upgrader: newUpgrader(),
 	}
-	return hub
 }

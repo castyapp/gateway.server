@@ -6,11 +6,13 @@ import (
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
 	"github.com/CastyLab/grpc.proto/messages"
+	"github.com/getsentry/sentry-go"
 	"github.com/golang/protobuf/proto"
 	"github.com/gorilla/websocket"
 	"github.com/orcaman/concurrent-map"
 	"log"
 	"net/http"
+	"reflect"
 )
 
 /* Controls a bunch of rooms */
@@ -51,9 +53,23 @@ func (h *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 
 	h.ctx = req.Context()
 
+	subprotos := websocket.Subprotocols(req)
+	if !reflect.DeepEqual(subprotos, h.upgrader.Subprotocols) {
+		log.Printf("subprotols=%v, want %v", subprotos, h.upgrader.Subprotocols)
+		http.Error(w, "bad protocol", http.StatusBadRequest)
+		return
+	}
+
 	conn, err := h.upgrader.Upgrade(w, req, nil)
 	if err != nil {
+		sentry.CaptureException(err)
 		log.Println("upgrade:", err)
+		return
+	}
+
+	if conn.Subprotocol() != "cp0" {
+		log.Printf("Subprotocol() = %s, want cp0", conn.Subprotocol())
+		conn.Close()
 		return
 	}
 
@@ -94,15 +110,9 @@ func (h *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 
 /* Constructor */
 func NewTheaterHub(uhub *UserHub) *TheaterHub {
-	hub := new(TheaterHub)
-	hub.userHub = uhub
-	hub.cmap = cmap.New()
-	hub.upgrader = websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
-		CheckOrigin: func(r *http.Request) bool {
-			return true
-		},
+	return &TheaterHub{
+		upgrader: newUpgrader(),
+		userHub:  uhub,
+		cmap:     cmap.New(),
 	}
-	return hub
 }
