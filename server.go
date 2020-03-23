@@ -44,8 +44,16 @@ func main() {
 		return
 	}
 
-	router.HandleFunc("/user", userhub.Handler).Methods("GET")
-	router.HandleFunc("/theater", theaterhub.Handler).Methods("GET")
+	router.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
+		switch request.Header.Get("Websocket-Room") {
+		case "USER-ROOM":
+			userhub.Handler(writer, request)
+			return
+		case "THEATER-ROOM":
+			theaterhub.Handler(writer, request)
+			return
+		}
+	}).Methods("GET")
 
 	http.Handle("/", router)
 
