@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/CastyLab/gateway.server/hub/protocol"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
 	"github.com/gorilla/websocket"
@@ -10,13 +11,16 @@ import (
 
 func main() {
 
+	accessToken := "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE1ODUwODU1MzIsInN1YiI6IjVlNjQzNzJkYjM5MTM5OWI0N2M4YjA1NCJ9.V8qgH9HSngT8PrrNMk8Z_oxrxKsHsg8hXHnaf-w4OMeU-h9Rh64gYY-657Pzd1Gb3clpQHQe5kTqghRpeGu80Xth5XLFwpFs1ql1OQjFf28Iyhz04vN8-JwgVGaVPG70L7Eo_W-mxxPqxy-33b2OwmrYJmzmB2OnhgTRzUNt4TeIWtBwmFRVpSveeQwKKnJ462j8Q3p1ZsKgDdw1neXK3I3npc34-qX0IIMakoBhWcYM1ID-PNrRHwk41wDQrRMo8d_xqtiZXGD7gE3UEVhTjItLoVM_ZuXqUOYVivQZwvzqz5_E75RuoGfJDBM5cqlTbTqSyM0j-xLOSKschBg3ltEelCKAvaAtjvmac-e24raoqH-pH9rVGKMR5GZcTy2TiVF51KgzJ6XGThwUROa7XdY5HE1P8CFpcQ29lUcm75MtIZ25FagK2RhBZIF9v3Db9WnWQTzgXt6BZBFGjPRJtJ0QjadNXovXGJ5lhzsQTz15VENba6i4_Pky8rZyZtZo8DE4g9TEWNYh-H7ylo_gZrZDjZ_6-o8RpC21Co2YwPXHKuNWTuCin0h-ix2EHHYTAYLDVWM0Buv7H9AyoNdaFNIjxp3kCNNpPN7k7_PNXQPWiKxY87JKpM4zrJmfyRFs2Vn9H-9Cwr5PfWmTWvZmRU2ivg6bbFdUwQPkf_XZYG8"
+
+	websocket.DefaultDialer.Subprotocols = []string{"cp0", "cp1"}
 	clientConn, _, err := websocket.DefaultDialer.Dial("ws://localhost:3000/user", nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	buffer, err := protobuf.NewMsgProtobuf(enums.EMSG_LOGON, &protobuf.LogOnEvent{
-		Token: []byte("eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE1ODQ5OTY2NDgsInN1YiI6IjVlNjQzNzJkYjM5MTM5OWI0N2M4YjA1NCJ9.ss_rYIr94GAV09A_TZ37S_pm2aJSsU5ZEn2Z0VKOTyKinnlvRwY-Aj_z4brjoa-8qL2DgCRK86ZaHyjTkxO1F4vj3PHhPX-eJuhskiHg9o8s6G4YFbhA8kSoMvd2wGautkt-Tu-YQ5gNcoWLWFypniFReOE1JcUXPEx6-yDV0oq0o30LNI-I9C-fIEMdKw7RcKTlgNA4eKxEr4357u0ZWpBltFXJ_i8O6pPkkeNms2ay_3hCqn7Fe1EJZ7uqpzgg53xXHi7EgWGPN5QnY_K1UdOYGyTXB-UqT13Edz9XpFD5xRXCSL3CpOGUA4htPf1oYY2MZnhKpOETxqsg405DYv8nW5mjehLryYBhJmmkTzFPhU_RZyzEiblJjYSRhpS6kIh21WuiWNI2SgmaJ1LHRmZcbRemKx0Tye3TWzAh7rS1g36MUOuqn2_ushddGwGQn9PMrbRS1mvsToUlklxm7Vkzc_50Xvw4AdJ3qNd_O4ClzmH0iQ2VSZVNZVOavu7vh6jVnwJXKAmNdlJDk39sPvD_w1T9J4QaczBlG_KZmNh_IClijqsdeI_t8Vy35o6hKHn9BC66FRYJ--1AfWyqqR-4UkKOk3n2UefMrI1EpPgsg-GoynULYsHMRjz4ci1V57AbyWRsqWWDPi7fKP06KRu758spm9MmmNAjxfrGJ74"),
+		Token: []byte(accessToken),
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -27,7 +31,25 @@ func main() {
 		log.Fatal(err)
 	}
 
-	ticket := time.NewTicker(6 * time.Second)
+	ticket := time.NewTicker(25 * time.Second)
+
+	go func() {
+
+		for {
+			_, data, err := clientConn.ReadMessage()
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			packet, err := protocol.NewPacket(data)
+			if err != nil {
+				log.Println("Error while creating new packet: ", err)
+				continue
+			}
+			log.Println(packet)
+		}
+
+	}()
 
 	for {
 		select {

@@ -96,7 +96,6 @@ func (h *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 		if err == nil {
 			_ = client.WriteMessage(buffer.Bytes())
 		}
-		client.closed = true
 	})
 
 	client.OnLeave(func(room Room) {
