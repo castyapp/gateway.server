@@ -71,7 +71,7 @@ func (r *TheaterRoom) Join(client *Client) {
 
 func (r *TheaterRoom) getMembers() (members []*messages.User) {
 	for _, member := range r.members {
-		members = append(members, &member.User)
+		members = append(members, member.User)
 	}
 	return
 }
@@ -97,12 +97,6 @@ func (r *TheaterRoom) updateUserActivity(client *Client) {
 
 func (r *TheaterRoom) removeUserActivity(client *Client) {
 	mCtx, _ := context.WithTimeout(r.hub.ctx, 10 * time.Second)
-	_, _ = grpc.TheaterServiceClient.RemoveMember(mCtx, &proto.AddOrRemoveMemberRequest{
-		TheaterId: r.theater.Id,
-		AuthRequest: &proto.AuthenticateRequest{
-			Token: client.auth.token,
-		},
-	})
 	_, _ = grpc.UserServiceClient.RemoveActivity(mCtx, &proto.AuthenticateRequest{
 		Token: client.auth.token,
 	})
@@ -113,20 +107,27 @@ func (r *TheaterRoom) Leave(client *Client) {
 
 	// removing client from room
 	delete(r.clients, client.Id)
-	delete(r.members[client.auth.user.Id].Clients, client.Id)
+
+	if r.members[client.auth.user.Id] != nil {
+
+		if len(r.members[client.auth.user.Id].Clients) > 0 {
+			delete(r.members[client.auth.user.Id].Clients, client.Id)
+		}
+
+		if len(r.members[client.auth.user.Id].Clients) == 0 {
+			delete(r.members, client.auth.user.Id)
+			err := r.updateClientToFriends(client, &protobuf.PersonalStateMsgEvent{
+				User:  client.auth.user,
+				State: enums.EMSG_PERSONAL_STATE_OFFLINE,
+			})
+			if err != nil {
+				log.Println(err)
+			}
+		}
+
+	}
 
 	r.removeUserActivity(client)
-
-	if len(r.members[client.auth.user.Id].Clients) == 0 {
-		delete(r.members, client.auth.user.Id)
-		err := r.updateClientToFriends(client, &protobuf.PersonalStateMsgEvent{
-			User:  client.auth.user,
-			State: enums.EMSG_PERSONAL_STATE_OFFLINE,
-		})
-		if err != nil {
-			log.Println(err)
-		}
-	}
 
 	if len(r.clients) == 0 {
 		r.hub.RemoveRoom(r.name)
@@ -183,9 +184,11 @@ func (r *TheaterRoom) updateClientToFriends(client *Client, msg *protobuf.Person
 		User: client.auth.user,
 	}
 	if msg.State == enums.EMSG_PERSONAL_STATE_ONLINE {
-		pmae.Activity = &messages.Activity{
-			Id: r.theater.Id,
-			Activity: r.theater.Title,
+		if r.theater != nil {
+			pmae.Activity = &messages.Activity{
+				Id: r.theater.Id,
+				Activity: r.theater.Title,
+			}
 		}
 	}
 	//_ = r.updateMyActivity(client, pmae)
@@ -210,12 +213,11 @@ func (r *TheaterRoom) updateMyActivity(client *Client, msg *protobuf.PersonalAct
 }
 
 /* Handle messages */
-func (r *TheaterRoom) HandleEvents(client *Client) {
+func (r *TheaterRoom) HandleEvents(client *Client) error {
 	for {
 		select {
 		case <-r.hub.ctx.Done():
-			log.Println("TheaterRoom HandleEvents Err: ", r.hub.ctx.Err())
-			return
+			return r.hub.ctx.Err()
 		case event := <-client.Event:
 			if event != nil {
 				switch event.EMsg {

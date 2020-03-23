@@ -4,17 +4,19 @@ import (
 	"context"
 	"errors"
 	"github.com/CastyLab/gateway.server/grpc"
+	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
+	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
 	proto2 "github.com/CastyLab/grpc.proto"
 	"github.com/getsentry/sentry-go"
+	"github.com/gin-gonic/gin"
+	"github.com/gobwas/ws"
+	"github.com/golang/protobuf/proto"
 	"log"
 	"net/http"
 	"reflect"
 	"time"
 
-	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
-	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
 	"github.com/CastyLab/grpc.proto/messages"
-	"github.com/golang/protobuf/proto"
 	"github.com/gorilla/websocket"
 	"github.com/orcaman/concurrent-map"
 )
@@ -72,31 +74,25 @@ func (h *UserHub) Close() {
 }
 
 /* Get ws conn. and hands it over to correct room */
-func (h *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
+func (h *UserHub) Handler(ctx *gin.Context) {
 
-	h.ctx = req.Context()
-
-	subprotos := websocket.Subprotocols(req)
+	h.ctx = ctx
+	subprotos := websocket.Subprotocols(ctx.Request)
 	if !reflect.DeepEqual(subprotos, h.upgrader.Subprotocols) {
 		log.Printf("subprotols=%v, want %v", subprotos, h.upgrader.Subprotocols)
-		http.Error(w, "bad protocol", http.StatusBadRequest)
+		ctx.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
 
-	conn, err := h.upgrader.Upgrade(w, req, nil)
+	conn, _, _, err := ws.UpgradeHTTP(ctx.Request, ctx.Writer)
 	if err != nil {
 		sentry.CaptureException(err)
 		log.Println("upgrade:", err)
 		return
 	}
 
-	if conn.Subprotocol() != "cp0" {
-		log.Printf("Subprotocol() = %s, want cp0", conn.Subprotocol())
-		conn.Close()
-		return
-	}
-
-	client := NewClient(h.ctx, conn, UserRoomType)
+	client := NewClient(ctx, conn, UserRoomType)
+	defer client.Close()
 
 	client.OnAuthorized(func(e proto.Message, u *messages.User) Room {
 		event := e.(*protobuf.LogOnEvent)
@@ -120,6 +116,7 @@ func (h *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
 	})
 
 	client.Listen()
+	return
 }
 
 /* Constructor */

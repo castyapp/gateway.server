@@ -2,17 +2,20 @@ package hub
 
 import (
 	"context"
+	"fmt"
 	"github.com/CastyLab/gateway.server/grpc"
 	"github.com/CastyLab/gateway.server/hub/protocol"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
 	gRPCproto "github.com/CastyLab/grpc.proto"
 	"github.com/CastyLab/grpc.proto/messages"
-	"github.com/getsentry/sentry-go"
+	"github.com/gobwas/ws"
+	"github.com/gobwas/ws/wsutil"
 	"github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
+	"github.com/pkg/errors"
 	"log"
+	"net"
 	"time"
 )
 
@@ -25,7 +28,7 @@ const (
 
 type Room interface {
 	Join(client *Client)
-	HandleEvents(client *Client)
+	HandleEvents(client *Client) error
 	Leave(client *Client)
 }
 
@@ -39,7 +42,7 @@ type Auth struct {
 
 type Client struct {
 	Id             uint32
-	conn           *websocket.Conn
+	conn           net.Conn
 	Event          chan *protocol.Packet
 	ctx            context.Context
 	ctxCancel      context.CancelFunc
@@ -73,92 +76,68 @@ func (c *Client) OnLeave(cb func(room Room)) {
 	c.onLeaveRoom = cb
 }
 
-func (c *Client) close() {
+func (c *Client) Close() error {
 	// call registered on leave function
 	c.onLeaveRoom(c.room)
-
-	// closing event channel
-	close(c.Event)
-
-	// close websocket connection
-	_ = c.conn.Close()
-
-	log.Printf("Client [%d] disconnected!", c.Id)
+	return errors.New(fmt.Sprintf("Client [%d] disconnected!", c.Id))
 }
 
-func (c *Client) keepAlive() {
+func (c *Client) Listen() error {
+
 	for {
 		select {
 		case <-c.ctx.Done():
-			log.Println("Keep-Alive Err: ", c.ctx.Err())
-			return
-		case <-c.pingChan:
-			c.lastPingAt = time.Now()
-			if buffer, err := protobuf.NewMsgProtobuf(enums.EMSG_PONG, nil); err == nil {
-				if err := c.WriteMessage(buffer.Bytes()); err != nil {
-					return
+			return c.Close()
+		default:
+
+			data, err := wsutil.ReadClientBinary(c.conn)
+			if err != nil {
+				c.ctxCancel()
+				return c.Close()
+			}
+
+			if data != nil {
+				packet, err := protocol.NewPacket(data)
+				if err != nil {
+					log.Println("Error while creating new packet: ", err)
+					continue
 				}
+
+				if !packet.IsProto {
+					log.Println("Packet type should be Protobuf")
+					continue
+				}
+
+				switch packet.EMsg {
+				case enums.EMSG_PING:
+					c.lastPingAt = time.Now()
+					if buffer, err := protobuf.NewMsgProtobuf(enums.EMSG_PONG, nil); err == nil {
+						if err := c.WriteMessage(buffer.Bytes()); err != nil {
+							return err
+						}
+					}
+				case enums.EMSG_LOGON:
+					if !c.IsAuthenticated() {
+						var logOnEvent proto.Message
+						switch c.roomType {
+						case UserRoomType:
+							logOnEvent = new(protobuf.LogOnEvent)
+						case TheaterRoomType:
+							logOnEvent = new(protobuf.TheaterLogOnEvent)
+						}
+						if err := packet.ReadProtoMsg(logOnEvent); err != nil {
+							log.Println(err)
+							break
+						}
+						c.Authentication(getTokenFromLogOnEvent(logOnEvent), logOnEvent)
+					}
+				}
+
+				c.Event <- packet
 			}
 		}
 	}
-}
 
-func (c *Client) listen()  {
-
-	for {
-
-		mType, data, err := c.conn.ReadMessage()
-		if err != nil {
-			sentry.CaptureException(err)
-			log.Println(err)
-			c.ctxCancel()
-			return
-		}
-
-		if mType != websocket.BinaryMessage {
-			log.Println("Websocket message should be BinaryMessage")
-			continue
-		}
-
-		packet, err := protocol.NewPacket(data)
-		if err != nil {
-			log.Println("Error while creating new packet: ", err)
-			continue
-		}
-
-		if !packet.IsProto {
-			log.Println("Packet type should be Protobuf")
-			continue
-		}
-
-		switch packet.EMsg {
-		case enums.EMSG_PING:
-			c.pingChan <- struct{}{}
-		case enums.EMSG_LOGON:
-			if !c.IsAuthenticated() {
-				var logOnEvent proto.Message
-				switch c.roomType {
-				case UserRoomType:
-					logOnEvent = new(protobuf.LogOnEvent)
-				case TheaterRoomType:
-					logOnEvent = new(protobuf.TheaterLogOnEvent)
-				}
-				if err := packet.ReadProtoMsg(logOnEvent); err != nil {
-					log.Println(err)
-					break
-				}
-				c.Authentication(getTokenFromLogOnEvent(logOnEvent), logOnEvent)
-			}
-		}
-
-		c.Event <- packet
-	}
-}
-
-func (c *Client) Listen() {
-	defer c.close()
-	go c.listen()
-	c.keepAlive()
 }
 
 func getTokenFromLogOnEvent(event proto.Message) []byte {
@@ -179,6 +158,8 @@ func (c *Client) Authentication(token []byte, event proto.Message) {
 		if err != nil {
 			c.auth = Auth{err: err}
 			c.onAuthFailed()
+			_ = c.conn.Close()
+			c.ctxCancel()
 			return
 		} else {
 			c.auth = Auth{
@@ -195,13 +176,13 @@ func (c *Client) Authentication(token []byte, event proto.Message) {
 }
 
 func (c *Client) WriteMessage(msg []byte) (err error) {
-	err = c.conn.WriteMessage(websocket.BinaryMessage, msg)
+	err = wsutil.WriteServerMessage(c.conn, ws.OpBinary, msg)
 	return
 }
 
-func NewClient(ctx context.Context, conn *websocket.Conn, rType RoomType) *Client {
+func NewClient(ctx context.Context, conn net.Conn, rType RoomType) (client *Client) {
 	mCtx, cancelFunc := context.WithCancel(ctx)
-	return &Client{
+	client = &Client{
 		Id:        uuid.New().ID(),
 		conn:      conn,
 		ctx:       mCtx,
@@ -211,4 +192,10 @@ func NewClient(ctx context.Context, conn *websocket.Conn, rType RoomType) *Clien
 		roomType:  rType,
 		pingChan:  make(chan struct{}),
 	}
+	client.onLeaveRoom = func(room Room) {
+		if room != nil {
+			room.Leave(client)
+		}
+	}
+	return
 }

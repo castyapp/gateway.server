@@ -168,14 +168,13 @@ func (r *UserRoom) fetchFriends() error {
 }
 
 /* Handle messages */
-func (r *UserRoom) HandleEvents(client *Client) {
+func (r *UserRoom) HandleEvents(client *Client) error {
 	for {
 		select {
 		case <-r.hub.ctx.Done():
-			log.Println("UserRoom HandleEvents Err: ", r.hub.ctx.Err())
-			return
-		case event := <-client.Event:
-			if event != nil {
+			return errors.New("context closed")
+		default:
+			if event := <-client.Event; event != nil {
 				switch event.EMsg {
 				case enums.EMSG_NEW_CHAT_MESSAGE:
 					if client.IsAuthenticated() {

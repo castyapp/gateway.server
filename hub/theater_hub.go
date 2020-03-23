@@ -7,6 +7,8 @@ import (
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
 	"github.com/CastyLab/grpc.proto/messages"
 	"github.com/getsentry/sentry-go"
+	"github.com/gin-gonic/gin"
+	"github.com/gobwas/ws"
 	"github.com/golang/protobuf/proto"
 	"github.com/gorilla/websocket"
 	"github.com/orcaman/concurrent-map"
@@ -49,45 +51,36 @@ func (h *TheaterHub) RemoveRoom(name string) {
 }
 
 /* Get ws conn. and hands it over to correct room */
-func (h *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
+func (h *TheaterHub) Handler(ctx *gin.Context) {
 
-	h.ctx = req.Context()
+	h.ctx = ctx
 
-	subprotos := websocket.Subprotocols(req)
+	subprotos := websocket.Subprotocols(ctx.Request)
 	if !reflect.DeepEqual(subprotos, h.upgrader.Subprotocols) {
 		log.Printf("subprotols=%v, want %v", subprotos, h.upgrader.Subprotocols)
-		http.Error(w, "bad protocol", http.StatusBadRequest)
+		ctx.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
 
-	conn, err := h.upgrader.Upgrade(w, req, nil)
+	conn, _, _, err := ws.UpgradeHTTP(ctx.Request, ctx.Writer)
 	if err != nil {
 		sentry.CaptureException(err)
 		log.Println("upgrade:", err)
 		return
 	}
 
-	if conn.Subprotocol() != "cp0" {
-		log.Printf("Subprotocol() = %s, want cp0", conn.Subprotocol())
-		conn.Close()
-		return
-	}
-
 	client := NewClient(h.ctx, conn, TheaterRoomType)
+	defer client.Close()
 
 	client.OnAuthorized(func(e proto.Message, u *messages.User) Room {
-
 		event := e.(*protobuf.TheaterLogOnEvent)
 		room , err := h.GetOrCreateRoom(string(event.Room))
-
 		if err != nil {
 			_ = client.conn.Close()
 			log.Println("Error while creating or getting the room from cmp: ", err)
 			return nil
 		}
-
 		room.Join(client)
-
 		return room
 	})
 
@@ -95,12 +88,6 @@ func (h *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 		buffer, err := protobuf.NewMsgProtobuf(enums.EMSG_UNAUTHORIZED, nil)
 		if err == nil {
 			_ = client.WriteMessage(buffer.Bytes())
-		}
-	})
-
-	client.OnLeave(func(room Room) {
-		if room != nil {
-			room.Leave(client)
 		}
 	})
 

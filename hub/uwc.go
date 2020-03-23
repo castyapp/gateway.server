@@ -5,13 +5,13 @@ import (
 )
 
 type UserWithClients struct {
-	Clients map[uint32]*Client
-	messages.User
+	Clients  map[uint32] *Client
+	User     *messages.User
 }
 
 func NewUserWithClients(user *messages.User) *UserWithClients {
 	return &UserWithClients{
-		Clients: map[uint32]*Client{},
-		User:    *user,
+		Clients: make(map[uint32] *Client, 0),
+		User: user,
 	}
 }
