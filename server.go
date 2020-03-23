@@ -9,20 +9,12 @@ import (
 	_ "github.com/joho/godotenv/autoload"
 	"log"
 	"os"
-	"runtime"
 	"time"
 )
 
 func main() {
 
 	log.SetFlags(log.Lshortfile | log.Ltime)
-
-	go func() {
-		for {
-			log.Println(runtime.NumGoroutine())
-			time.Sleep(time.Second)
-		}
-	}()
 
 	if err := sentry.Init(sentry.ClientOptions{ Dsn: os.Getenv("SENTRY_DSN") }); err != nil {
 		log.Fatal(err)
