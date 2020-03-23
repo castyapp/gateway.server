@@ -37,7 +37,7 @@ func main() {
 	defer userhub.Close()
 
 	router.Use(middlewares.CORSMiddleware)
-	router.Use(middlewares.SubProtocols)
+	//router.Use(middlewares.SubProtocols)
 
 	router.GET("/user", userhub.Handler)
 	router.GET("/theater", theaterhub.Handler)
