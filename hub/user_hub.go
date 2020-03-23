@@ -13,7 +13,6 @@ import (
 	"github.com/golang/protobuf/proto"
 	"log"
 	"net/http"
-	"reflect"
 	"time"
 
 	"github.com/CastyLab/grpc.proto/messages"
@@ -77,13 +76,6 @@ func (h *UserHub) Close() {
 func (h *UserHub) Handler(ctx *gin.Context) {
 
 	h.ctx = ctx
-	subprotos := websocket.Subprotocols(ctx.Request)
-	if !reflect.DeepEqual(subprotos, h.upgrader.Subprotocols) {
-		log.Printf("subprotols=%v, want %v", subprotos, h.upgrader.Subprotocols)
-		ctx.AbortWithStatus(http.StatusBadRequest)
-		return
-	}
-
 	conn, _, _, err := ws.UpgradeHTTP(ctx.Request, ctx.Writer)
 	if err != nil {
 		sentry.CaptureException(err)

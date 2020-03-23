@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/CastyLab/gateway.server/hub"
+	"github.com/CastyLab/gateway.server/hub/middlewares"
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	_ "github.com/joho/godotenv/autoload"
@@ -34,6 +35,9 @@ func main() {
 	flag.Parse()
 
 	defer userhub.Close()
+
+	router.Use(middlewares.CORSMiddleware)
+	router.Use(middlewares.SubProtocols)
 
 	router.GET("/user", userhub.Handler)
 	router.GET("/theater", theaterhub.Handler)
