@@ -7,12 +7,12 @@ import (
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
 	"github.com/CastyLab/grpc.proto/messages"
 	"github.com/getsentry/sentry-go"
-	"github.com/gin-gonic/gin"
 	"github.com/gobwas/ws"
 	"github.com/golang/protobuf/proto"
 	"github.com/gorilla/websocket"
 	"github.com/orcaman/concurrent-map"
 	"log"
+	"net/http"
 )
 
 /* Controls a bunch of rooms */
@@ -49,10 +49,10 @@ func (h *TheaterHub) RemoveRoom(name string) {
 }
 
 /* Get ws conn. and hands it over to correct room */
-func (h *TheaterHub) Handler(ctx *gin.Context) {
+func (h *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 
-	h.ctx = ctx
-	conn, _, _, err := ws.UpgradeHTTP(ctx.Request, ctx.Writer)
+	h.ctx = req.Context()
+	conn, _, _, err := ws.UpgradeHTTP(req, w)
 	if err != nil {
 		sentry.CaptureException(err)
 		log.Println("upgrade:", err)
@@ -82,6 +82,7 @@ func (h *TheaterHub) Handler(ctx *gin.Context) {
 	})
 
 	client.Listen()
+	return
 }
 
 /* Constructor */

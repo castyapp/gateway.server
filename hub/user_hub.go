@@ -8,7 +8,6 @@ import (
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
 	proto2 "github.com/CastyLab/grpc.proto"
 	"github.com/getsentry/sentry-go"
-	"github.com/gin-gonic/gin"
 	"github.com/gobwas/ws"
 	"github.com/golang/protobuf/proto"
 	"log"
@@ -73,17 +72,17 @@ func (h *UserHub) Close() {
 }
 
 /* Get ws conn. and hands it over to correct room */
-func (h *UserHub) Handler(ctx *gin.Context) {
+func (h *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
 
-	h.ctx = ctx
-	conn, _, _, err := ws.UpgradeHTTP(ctx.Request, ctx.Writer)
+	h.ctx = req.Context()
+	conn, _, _, err := ws.UpgradeHTTP(req, w)
 	if err != nil {
 		sentry.CaptureException(err)
 		log.Println("upgrade:", err)
 		return
 	}
 
-	client := NewClient(ctx, conn, UserRoomType)
+	client := NewClient(h.ctx, conn, UserRoomType)
 	defer client.Close()
 
 	client.OnAuthorized(func(e proto.Message, u *messages.User) Room {

@@ -4,11 +4,12 @@ import (
 	"flag"
 	"fmt"
 	"github.com/CastyLab/gateway.server/hub"
-	"github.com/CastyLab/gateway.server/hub/middlewares"
 	"github.com/getsentry/sentry-go"
-	"github.com/gin-gonic/gin"
+	"github.com/gorilla/mux"
 	_ "github.com/joho/godotenv/autoload"
 	"log"
+	"net"
+	"net/http"
 	"os"
 	"time"
 )
@@ -26,7 +27,7 @@ func main() {
 	defer sentry.Flush(time.Second * 5)
 
 	var (
-		router     = gin.Default()
+		router     = mux.NewRouter()
 		userhub    = hub.NewUserHub()
 		theaterhub = hub.NewTheaterHub(userhub)
 		port       = flag.Int("port", 3000, "Server port")
@@ -36,16 +37,20 @@ func main() {
 
 	defer userhub.Close()
 
-	router.Use(middlewares.CORSMiddleware)
-	//router.Use(middlewares.SubProtocols)
-
-	router.GET("/user", userhub.Handler)
-	router.GET("/theater", theaterhub.Handler)
-
-	log.Printf("Server running and listeting on :%d", *port)
-
-	if err := router.Run(fmt.Sprintf(":%d", *port)); err != nil {
-		log.Printf("http_err: %v", err)
+	unixListener, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
+	if err != nil {
+		sentry.CaptureException(err)
+		log.Fatal(err)
+		return
 	}
 
+	router.HandleFunc("/user", userhub.Handler).Methods("GET")
+	router.HandleFunc("/theater", theaterhub.Handler).Methods("GET")
+
+	http.Handle("/", router)
+
+	defer unixListener.Close()
+
+	log.Printf("Server running and listeting on :%d", *port)
+	log.Printf("http_err: %v", http.Serve(unixListener, nil))
 }

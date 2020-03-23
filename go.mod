@@ -9,6 +9,7 @@ require (
 	github.com/gobwas/ws v1.0.2
 	github.com/golang/protobuf v1.3.4
 	github.com/google/uuid v1.1.1
+	github.com/gorilla/mux v1.7.4
 	github.com/gorilla/websocket v1.4.1
 	github.com/joho/godotenv v1.3.0
 	github.com/orcaman/concurrent-map v0.0.0-20190826125027-8c72a8bb44f6
