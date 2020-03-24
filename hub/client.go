@@ -7,11 +7,10 @@ import (
 	"github.com/CastyLab/gateway.server/hub/protocol"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
-	gRPCproto "github.com/CastyLab/grpc.proto"
-	"github.com/CastyLab/grpc.proto/messages"
+	"github.com/CastyLab/grpc.proto/proto"
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
-	"github.com/golang/protobuf/proto"
+	pb "github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"log"
@@ -36,8 +35,8 @@ type Auth struct {
 	err           error
 	authenticated bool
 	token         []byte
-	event         proto.Message
-	user          *messages.User
+	event         pb.Message
+	user          *proto.User
 }
 
 type Client struct {
@@ -46,7 +45,7 @@ type Client struct {
 	Event          chan *protocol.Packet
 	ctx            context.Context
 	ctxCancel      context.CancelFunc
-	onAuthSuccess  func(e proto.Message, u *messages.User) Room
+	onAuthSuccess  func(e pb.Message, u *proto.User) Room
 	onAuthFailed   func()
 	onLeaveRoom    func(room Room)
 	auth           Auth
@@ -56,11 +55,11 @@ type Client struct {
 	lastPingAt     time.Time
 }
 
-func (c *Client) GetUser() *messages.User {
+func (c *Client) GetUser() *proto.User {
 	return c.auth.user
 }
 
-func (c *Client) OnAuthorized(callback func(e proto.Message, u *messages.User) Room) {
+func (c *Client) OnAuthorized(callback func(e pb.Message, u *proto.User) Room) {
 	c.onAuthSuccess = callback
 }
 
@@ -118,7 +117,7 @@ func (c *Client) Listen() error {
 					}
 				case enums.EMSG_LOGON:
 					if !c.IsAuthenticated() {
-						var logOnEvent proto.Message
+						var logOnEvent pb.Message
 						switch c.roomType {
 						case UserRoomType:
 							logOnEvent = new(protobuf.LogOnEvent)
@@ -140,7 +139,7 @@ func (c *Client) Listen() error {
 
 }
 
-func getTokenFromLogOnEvent(event proto.Message) []byte {
+func getTokenFromLogOnEvent(event pb.Message) []byte {
 	switch event.(type) {
 	case *protobuf.TheaterLogOnEvent:
 		return event.(*protobuf.TheaterLogOnEvent).Token
@@ -150,9 +149,9 @@ func getTokenFromLogOnEvent(event proto.Message) []byte {
 	return nil
 }
 
-func (c *Client) Authentication(token []byte, event proto.Message) {
+func (c *Client) Authentication(token []byte, event pb.Message) {
 	if !c.IsAuthenticated() {
-		response, err := grpc.UserServiceClient.GetUser(c.ctx, &gRPCproto.AuthenticateRequest{
+		response, err := grpc.UserServiceClient.GetUser(c.ctx, &proto.AuthenticateRequest{
 			Token: token,
 		})
 		if err != nil {

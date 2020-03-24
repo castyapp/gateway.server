@@ -2,7 +2,7 @@ package grpc
 
 import (
 	"fmt"
-	"github.com/CastyLab/grpc.proto"
+	"github.com/CastyLab/grpc.proto/proto"
 	_ "github.com/joho/godotenv/autoload"
 	"google.golang.org/grpc"
 	"log"

@@ -5,9 +5,8 @@ import (
 	"github.com/CastyLab/gateway.server/grpc"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
-	"github.com/CastyLab/grpc.proto"
-	"github.com/CastyLab/grpc.proto/messages"
-	gRPCproto "github.com/golang/protobuf/proto"
+	"github.com/CastyLab/grpc.proto/proto"
+	pb "github.com/golang/protobuf/proto"
 	"log"
 	"time"
 )
@@ -15,7 +14,7 @@ import (
 /* Has a name, clients, count which holds the actual coutn and index which acts as the unique id */
 type TheaterRoom struct {
 	name       string
-	theater    *messages.Theater
+	theater    *proto.Theater
 	clients    map[uint32] *Client
 	members    map[string] *UserWithClients
 	hub        *TheaterHub
@@ -69,7 +68,7 @@ func (r *TheaterRoom) Join(client *Client) {
 	return
 }
 
-func (r *TheaterRoom) getMembers() (members []*messages.User) {
+func (r *TheaterRoom) getMembers() (members []*proto.User) {
 	for _, member := range r.members {
 		members = append(members, member.User)
 	}
@@ -85,7 +84,7 @@ func (r *TheaterRoom) updateUserActivity(client *Client) {
 		},
 	})
 	_, _ = grpc.UserServiceClient.UpdateActivity(mCtx, &proto.UpdateActivityRequest{
-		Activity: &messages.Activity{
+		Activity: &proto.Activity{
 			Id:       r.theater.Id,
 			Activity: r.theater.Title,
 		},
@@ -167,7 +166,7 @@ func (r *TheaterRoom) BroadcastEx(senderid uint32, msg []byte) (err error) {
 	return
 }
 
-func (r *TheaterRoom) BroadcastProtoToAllEx(client *Client, enum enums.EMSG, pMsg gRPCproto.Message) error {
+func (r *TheaterRoom) BroadcastProtoToAllEx(client *Client, enum enums.EMSG, pMsg pb.Message) error {
 	buffer, err := protobuf.NewMsgProtobuf(enum, pMsg)
 	if err != nil {
 		return err
@@ -185,7 +184,7 @@ func (r *TheaterRoom) updateClientToFriends(client *Client, msg *protobuf.Person
 	}
 	if msg.State == enums.EMSG_PERSONAL_STATE_ONLINE {
 		if r.theater != nil {
-			pmae.Activity = &messages.Activity{
+			pmae.Activity = &proto.Activity{
 				Id: r.theater.Id,
 				Activity: r.theater.Title,
 			}
@@ -259,7 +258,7 @@ func (r *TheaterRoom) HandleEvents(client *Client) error {
 /* Constructor */
 func NewTheaterRoom(name string, hub *TheaterHub) (room *TheaterRoom, err error) {
 	mCtx, _ := context.WithTimeout(hub.ctx, 10 * time.Second)
-	response, err := grpc.TheaterServiceClient.GetTheater(mCtx, &messages.Theater{
+	response, err := grpc.TheaterServiceClient.GetTheater(mCtx, &proto.Theater{
 		Id: name,
 	})
 	if err != nil {

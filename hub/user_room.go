@@ -10,8 +10,7 @@ import (
 	"github.com/CastyLab/gateway.server/grpc"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
-	proto "github.com/CastyLab/grpc.proto"
-	"github.com/CastyLab/grpc.proto/messages"
+	"github.com/CastyLab/grpc.proto/proto"
 	"github.com/golang/protobuf/ptypes"
 )
 
@@ -24,7 +23,7 @@ type UserRoom struct {
 	Friends   []string
 }
 
-func (r *UserRoom) ChangeState(state messages.PERSONAL_STATE) {
+func (r *UserRoom) ChangeState(state proto.PERSONAL_STATE) {
 	mCtx, _ := context.WithTimeout(r.hub.ctx, 10*time.Second)
 	_, _ = grpc.UserServiceClient.UpdateState(mCtx, &proto.UpdateStateRequest{
 		State: state,
@@ -40,7 +39,7 @@ func (r *UserRoom) Join(client *Client) {
 	r.clients[client.Id] = client
 
 	if len(r.clients) <= 1 {
-		r.ChangeState(messages.PERSONAL_STATE_ONLINE)
+		r.ChangeState(proto.PERSONAL_STATE_ONLINE)
 		if err := r.fetchFriends(); err != nil {
 			log.Println(err)
 		}
@@ -59,7 +58,7 @@ func (r *UserRoom) Join(client *Client) {
 func (r *UserRoom) Leave(client *Client) {
 	delete(r.clients, client.Id)
 	if len(r.clients) == 0 {
-		r.ChangeState(messages.PERSONAL_STATE_OFFLINE)
+		r.ChangeState(proto.PERSONAL_STATE_OFFLINE)
 		r.updateMeOnFriendsList(&protobuf.PersonalStateMsgEvent{
 			State: enums.EMSG_PERSONAL_STATE_OFFLINE,
 			User:  client.auth.user,
@@ -75,7 +74,7 @@ func (r *UserRoom) Send(msg []byte) (err error) {
 	return
 }
 
-func (r *UserRoom) SendMessage(message *messages.Message) error {
+func (r *UserRoom) SendMessage(message *proto.Message) error {
 
 	if fc, ok := r.hub.cmap.Get(message.Reciever.Id); ok {
 

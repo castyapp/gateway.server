@@ -6,17 +6,15 @@ import (
 	"github.com/CastyLab/gateway.server/grpc"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
-	proto2 "github.com/CastyLab/grpc.proto"
+	"github.com/CastyLab/grpc.proto/proto"
 	"github.com/getsentry/sentry-go"
 	"github.com/gobwas/ws"
-	"github.com/golang/protobuf/proto"
+	pb "github.com/golang/protobuf/proto"
+	"github.com/gorilla/websocket"
+	"github.com/orcaman/concurrent-map"
 	"log"
 	"net/http"
 	"time"
-
-	"github.com/CastyLab/grpc.proto/messages"
-	"github.com/gorilla/websocket"
-	"github.com/orcaman/concurrent-map"
 )
 
 /* Controls a bunch of rooms */
@@ -54,7 +52,7 @@ func (h *UserHub) RollbackUsersStatesToOffline()  {
 	}
 	if len(usersIds) > 0 {
 		mCtx, _ := context.WithTimeout(h.ctx, 5 * time.Second)
-		response, err := grpc.UserServiceClient.RollbackStates(mCtx, &proto2.RollbackStatesRequest{
+		response, err := grpc.UserServiceClient.RollbackStates(mCtx, &proto.RollbackStatesRequest{
 			UsersIds: usersIds,
 		})
 		if err != nil {
@@ -85,7 +83,7 @@ func (h *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
 	client := NewClient(h.ctx, conn, UserRoomType)
 	defer client.Close()
 
-	client.OnAuthorized(func(e proto.Message, u *messages.User) Room {
+	client.OnAuthorized(func(e pb.Message, u *proto.User) Room {
 		event := e.(*protobuf.LogOnEvent)
 		room := h.GetOrCreateRoom(u.Id)
 		room.AuthToken = string(event.Token)

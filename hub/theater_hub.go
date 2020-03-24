@@ -5,10 +5,10 @@ import (
 	"errors"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
-	"github.com/CastyLab/grpc.proto/messages"
+	"github.com/CastyLab/grpc.proto/proto"
 	"github.com/getsentry/sentry-go"
 	"github.com/gobwas/ws"
-	"github.com/golang/protobuf/proto"
+	pb "github.com/golang/protobuf/proto"
 	"github.com/gorilla/websocket"
 	"github.com/orcaman/concurrent-map"
 	"log"
@@ -62,7 +62,7 @@ func (h *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 	client := NewClient(h.ctx, conn, TheaterRoomType)
 	defer client.Close()
 
-	client.OnAuthorized(func(e proto.Message, u *messages.User) Room {
+	client.OnAuthorized(func(e pb.Message, u *proto.User) Room {
 		event := e.(*protobuf.TheaterLogOnEvent)
 		room , err := h.GetOrCreateRoom(string(event.Room))
 		if err != nil {
