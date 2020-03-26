@@ -3,22 +3,23 @@ package hub
 import (
 	"context"
 	"errors"
+	"log"
+	"net/http"
+
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
 	"github.com/getsentry/sentry-go"
 	"github.com/gobwas/ws"
 	"github.com/gorilla/websocket"
-	"github.com/orcaman/concurrent-map"
-	"log"
-	"net/http"
+	cmap "github.com/orcaman/concurrent-map"
 )
 
 /* Controls a bunch of rooms */
 type TheaterHub struct {
-	ctx       context.Context
-	upgrader  websocket.Upgrader
-	userHub   *UserHub
-	cmap      cmap.ConcurrentMap
+	ctx      context.Context
+	upgrader websocket.Upgrader
+	userHub  *UserHub
+	cmap     cmap.ConcurrentMap
 }
 
 func (h *TheaterHub) GetContext() context.Context {
@@ -35,7 +36,7 @@ func (h *TheaterHub) FindRoom(name string) (room Room, err error) {
 /* If room doesn't exist creates it then returns it */
 func (h *TheaterHub) GetOrCreateRoom(name string) (room Room) {
 	if r, ok := h.cmap.Get(name); ok {
-		return r.(*UserRoom)
+		return r.(*TheaterRoom)
 	}
 	room, _ = NewTheaterRoom(name, h)
 	return
