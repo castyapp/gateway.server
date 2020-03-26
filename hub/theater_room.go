@@ -14,10 +14,15 @@ import (
 /* Has a name, clients, count which holds the actual coutn and index which acts as the unique id */
 type TheaterRoom struct {
 	name       string
+	AuthToken  string
 	theater    *proto.Theater
 	clients    map[uint32] *Client
 	members    map[string] *UserWithClients
 	hub        *TheaterHub
+}
+
+func (r *TheaterRoom) SetAuthToken(token string) {
+	r.AuthToken = token
 }
 
 func (r *TheaterRoom) GetClients() map[uint32] *Client {
@@ -207,7 +212,7 @@ func (r *TheaterRoom) updateMyActivity(client *Client, msg *protobuf.PersonalAct
 	if err != nil {
 		return err
 	}
-	uroom.updateMyActivityOnFriendsList(msg)
+	uroom.(*UserRoom).updateMyActivityOnFriendsList(msg)
 	return nil
 }
 

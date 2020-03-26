@@ -23,7 +23,15 @@ type UserRoom struct {
 	Friends   []string
 }
 
-func (r *UserRoom) ChangeState(state proto.PERSONAL_STATE) {
+func (r *UserRoom) SetAuthToken(token string) {
+	r.AuthToken = token
+}
+
+func (r *UserRoom) UpdateState(client *Client, state proto.PERSONAL_STATE) {
+	r.updateMeOnFriendsList(&protobuf.PersonalStateMsgEvent{
+		State: enums.EMSG_PERSONAL_STATE_ONLINE,
+		User:  client.auth.user,
+	})
 	mCtx, _ := context.WithTimeout(r.hub.ctx, 10*time.Second)
 	_, _ = grpc.UserServiceClient.UpdateState(mCtx, &proto.UpdateStateRequest{
 		State: state,
@@ -38,15 +46,9 @@ func (r *UserRoom) Join(client *Client) {
 
 	r.clients[client.Id] = client
 
-	if len(r.clients) <= 1 {
-		r.ChangeState(proto.PERSONAL_STATE_ONLINE)
-		if err := r.fetchFriends(); err != nil {
-			log.Println(err)
-		}
-		r.updateMeOnFriendsList(&protobuf.PersonalStateMsgEvent{
-			State: enums.EMSG_PERSONAL_STATE_ONLINE,
-			User:  client.auth.user,
-		})
+	if len(r.clients) == 1 {
+		r.fetchFriends()
+		r.UpdateState(client, proto.PERSONAL_STATE_ONLINE)
 	}
 
 	if err := protobuf.BrodcastMsgProtobuf(client.conn, enums.EMSG_AUTHORIZED, nil); err != nil {
@@ -58,11 +60,7 @@ func (r *UserRoom) Join(client *Client) {
 func (r *UserRoom) Leave(client *Client) {
 	delete(r.clients, client.Id)
 	if len(r.clients) == 0 {
-		r.ChangeState(proto.PERSONAL_STATE_OFFLINE)
-		r.updateMeOnFriendsList(&protobuf.PersonalStateMsgEvent{
-			State: enums.EMSG_PERSONAL_STATE_OFFLINE,
-			User:  client.auth.user,
-		})
+		r.UpdateState(client, proto.PERSONAL_STATE_OFFLINE)
 		r.hub.RemoveRoom(r.name)
 	}
 }
@@ -126,44 +124,33 @@ func (r *UserRoom) updateMyActivityOnFriendsList(psme *protobuf.PersonalActivity
 }
 
 func (r *UserRoom) updateMeOnFriendsList(psme *protobuf.PersonalStateMsgEvent) {
-
 	for _, fr := range r.Friends {
 		if fc, ok := r.hub.cmap.Get(fr); ok {
-
 			friendRoom := fc.(*UserRoom)
-
 			buffer, err := protobuf.NewMsgProtobuf(enums.EMSG_PERSONAL_STATE_CHANGED, psme)
 			if err != nil {
-				log.Println(err)
 				continue
 			}
-
 			if err := friendRoom.Send(buffer.Bytes()); err != nil {
-				log.Println(err)
 				continue
 			}
 		}
 	}
-
 }
 
-func (r *UserRoom) fetchFriends() error {
-
+func (r *UserRoom) fetchFriends() {
 	r.Friends = make([]string, 0)
-
 	mCtx, _ := context.WithTimeout(r.hub.ctx, 10*time.Second)
 	response, err := grpc.UserServiceClient.GetFriends(mCtx, &proto.AuthenticateRequest{
 		Token: []byte(r.AuthToken),
 	})
 	if err != nil {
-		return err
+		return
 	}
-
 	for _, friend := range response.Result {
 		r.Friends = append(r.Friends, friend.Id)
 	}
-
-	return nil
+	return
 }
 
 /* Handle messages */

@@ -5,10 +5,8 @@ import (
 	"errors"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
-	"github.com/CastyLab/grpc.proto/proto"
 	"github.com/getsentry/sentry-go"
 	"github.com/gobwas/ws"
-	pb "github.com/golang/protobuf/proto"
 	"github.com/gorilla/websocket"
 	"github.com/orcaman/concurrent-map"
 	"log"
@@ -23,12 +21,23 @@ type TheaterHub struct {
 	cmap      cmap.ConcurrentMap
 }
 
-/* If room doesn't exist creates it then returns it */
-func (h *TheaterHub) GetOrCreateRoom(name string) (room *TheaterRoom, err error) {
+func (h *TheaterHub) GetContext() context.Context {
+	return h.ctx
+}
+
+func (h *TheaterHub) FindRoom(name string) (room Room, err error) {
 	if r, ok := h.cmap.Get(name); ok {
 		return r.(*TheaterRoom), nil
 	}
-	room, err = NewTheaterRoom(name, h)
+	return nil, errors.New("theater room is missing from cmp")
+}
+
+/* If room doesn't exist creates it then returns it */
+func (h *TheaterHub) GetOrCreateRoom(name string) (room Room) {
+	if r, ok := h.cmap.Get(name); ok {
+		return r.(*UserRoom)
+	}
+	room, _ = NewTheaterRoom(name, h)
 	return
 }
 
@@ -48,6 +57,10 @@ func (h *TheaterHub) RemoveRoom(name string) {
 	return
 }
 
+func (h *TheaterHub) Close() error {
+	return nil
+}
+
 /* Get ws conn. and hands it over to correct room */
 func (h *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 
@@ -59,19 +72,14 @@ func (h *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	client := NewClient(h.ctx, conn, TheaterRoomType)
+	client := NewClient(h, conn, TheaterRoomType)
 	defer client.Close()
 
-	client.OnAuthorized(func(e pb.Message, u *proto.User) Room {
-		event := e.(*protobuf.TheaterLogOnEvent)
-		room , err := h.GetOrCreateRoom(string(event.Room))
-		if err != nil {
-			_ = client.conn.Close()
-			log.Println("Error while creating or getting the room from cmp: ", err)
-			return nil
-		}
+	client.OnAuthorized(func(auth Auth) (room Room) {
+		event := auth.event.(*protobuf.TheaterLogOnEvent)
+		room = h.GetOrCreateRoom(string(event.Room))
 		room.Join(client)
-		return room
+		return
 	})
 
 	client.OnUnauthorized(func() {

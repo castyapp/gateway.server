@@ -9,7 +9,6 @@ import (
 	"github.com/CastyLab/grpc.proto/proto"
 	"github.com/getsentry/sentry-go"
 	"github.com/gobwas/ws"
-	pb "github.com/golang/protobuf/proto"
 	"github.com/gorilla/websocket"
 	"github.com/orcaman/concurrent-map"
 	"log"
@@ -24,8 +23,11 @@ type UserHub struct {
 	ctx      context.Context
 }
 
-/* If room doesn't exist creates it then returns it */
-func (h *UserHub) FindRoom(name string) (room *UserRoom, err error) {
+func (h *UserHub) GetContext() context.Context {
+	return h.ctx
+}
+
+func (h *UserHub) FindRoom(name string) (room Room, err error) {
 	if r, ok := h.cmap.Get(name); ok {
 		return r.(*UserRoom), nil
 	}
@@ -33,7 +35,7 @@ func (h *UserHub) FindRoom(name string) (room *UserRoom, err error) {
 }
 
 /* If room doesn't exist creates it then returns it */
-func (h *UserHub) GetOrCreateRoom(name string) (room *UserRoom) {
+func (h *UserHub) GetOrCreateRoom(name string) (room Room) {
 	if r, ok := h.cmap.Get(name); ok {
 		return r.(*UserRoom)
 	}
@@ -46,6 +48,7 @@ func (h *UserHub) RemoveRoom(name string) {
 }
 
 func (h *UserHub) RollbackUsersStatesToOffline()  {
+	log.Println("\r- Rollback all online users to OFFLINE state!")
 	usersIds := make([]string, 0)
 	for uId := range h.cmap.Items() {
 		usersIds = append(usersIds, uId)
@@ -57,16 +60,17 @@ func (h *UserHub) RollbackUsersStatesToOffline()  {
 		})
 		if err != nil {
 			sentry.CaptureException(err)
-			log.Fatal(err)
+			log.Println(err)
 		}
 		if response.Code == http.StatusOK {
-			log.Fatal("Rolled back online users state to Offline successfully!")
+			log.Println("\r- Rolled back online users state to Offline successfully!")
 		}
 	}
 }
 
-func (h *UserHub) Close() {
+func (h *UserHub) Close() error {
 	h.RollbackUsersStatesToOffline()
+	return nil
 }
 
 /* Get ws conn. and hands it over to correct room */
@@ -80,15 +84,15 @@ func (h *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	client := NewClient(h.ctx, conn, UserRoomType)
+	client := NewClient(h, conn, UserRoomType)
 	defer client.Close()
 
-	client.OnAuthorized(func(e pb.Message, u *proto.User) Room {
-		event := e.(*protobuf.LogOnEvent)
-		room := h.GetOrCreateRoom(u.Id)
-		room.AuthToken = string(event.Token)
+	client.OnAuthorized(func(auth Auth) (room Room) {
+		event := auth.event.(*protobuf.LogOnEvent)
+		room = h.GetOrCreateRoom(auth.user.Id)
+		room.SetAuthToken(string(event.Token))
 		room.Join(client)
-		return room
+		return
 	})
 
 	client.OnUnauthorized(func() {

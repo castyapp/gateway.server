@@ -18,18 +18,6 @@ import (
 	"time"
 )
 
-type RoomType int
-
-const (
-	UserRoomType       RoomType = 0
-	TheaterRoomType    RoomType = 1
-)
-
-type Room interface {
-	Join(client *Client)
-	HandleEvents(client *Client) error
-	Leave(client *Client)
-}
 
 type Auth struct {
 	err           error
@@ -45,7 +33,7 @@ type Client struct {
 	Event          chan *protocol.Packet
 	ctx            context.Context
 	ctxCancel      context.CancelFunc
-	onAuthSuccess  func(e pb.Message, u *proto.User) Room
+	onAuthSuccess  func(auth Auth) Room
 	onAuthFailed   func()
 	onLeaveRoom    func(room Room)
 	auth           Auth
@@ -59,7 +47,7 @@ func (c *Client) GetUser() *proto.User {
 	return c.auth.user
 }
 
-func (c *Client) OnAuthorized(callback func(e pb.Message, u *proto.User) Room) {
+func (c *Client) OnAuthorized(callback func(auth Auth) Room) {
 	c.onAuthSuccess = callback
 }
 
@@ -76,12 +64,49 @@ func (c *Client) OnLeave(cb func(room Room)) {
 }
 
 func (c *Client) Close() error {
-	// call registered on leave function
-	c.onLeaveRoom(c.room)
+
+	if c.IsAuthenticated() {
+		if r := c.room; r != nil {
+			c.onLeaveRoom(r)
+		}
+	}
+
+	_ = c.conn.Close()
+
 	return errors.New(fmt.Sprintf("Client [%d] disconnected!", c.Id))
 }
 
+func (c *Client) PingPongHandler() error {
+
+	pTicker := time.NewTicker(time.Second)
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			log.Printf("PingPongHandler Err: %v", c.ctx.Err())
+			return c.Close()
+		case <-pTicker.C:
+			diff := time.Now().Sub(c.lastPingAt)
+			if diff.Round(time.Second) > time.Minute {
+				c.ctxCancel()
+				return c.Close()
+			}
+		case <-c.pingChan:
+			c.lastPingAt = time.Now()
+			if buffer, err := protobuf.NewMsgProtobuf(enums.EMSG_PONG, nil); err == nil {
+				_ = c.WriteMessage(buffer.Bytes())
+			}
+		}
+	}
+}
+
 func (c *Client) Listen() error {
+
+	go func() {
+		log.Println(c.PingPongHandler())
+	}()
+
+	c.pingChan <- struct{}{}
 
 	for {
 		select {
@@ -109,12 +134,7 @@ func (c *Client) Listen() error {
 
 				switch packet.EMsg {
 				case enums.EMSG_PING:
-					c.lastPingAt = time.Now()
-					if buffer, err := protobuf.NewMsgProtobuf(enums.EMSG_PONG, nil); err == nil {
-						if err := c.WriteMessage(buffer.Bytes()); err != nil {
-							return err
-						}
-					}
+					c.pingChan <- struct{}{}
 				case enums.EMSG_LOGON:
 					if !c.IsAuthenticated() {
 						var logOnEvent pb.Message
@@ -128,7 +148,7 @@ func (c *Client) Listen() error {
 							log.Println(err)
 							break
 						}
-						c.Authentication(getTokenFromLogOnEvent(logOnEvent), logOnEvent)
+						c.Authentication(logOnEvent)
 					}
 				}
 
@@ -149,7 +169,8 @@ func getTokenFromLogOnEvent(event pb.Message) []byte {
 	return nil
 }
 
-func (c *Client) Authentication(token []byte, event pb.Message) {
+func (c *Client) Authentication(event pb.Message) {
+	token := getTokenFromLogOnEvent(event)
 	if !c.IsAuthenticated() {
 		response, err := grpc.UserServiceClient.GetUser(c.ctx, &proto.AuthenticateRequest{
 			Token: token,
@@ -168,7 +189,7 @@ func (c *Client) Authentication(token []byte, event pb.Message) {
 				token:         token,
 				err:           nil,
 			}
-			c.room = c.onAuthSuccess(c.auth.event, c.auth.user)
+			c.room = c.onAuthSuccess(c.auth)
 			go c.room.HandleEvents(c)
 		}
 	}
@@ -179,8 +200,8 @@ func (c *Client) WriteMessage(msg []byte) (err error) {
 	return
 }
 
-func NewClient(ctx context.Context, conn net.Conn, rType RoomType) (client *Client) {
-	mCtx, cancelFunc := context.WithCancel(ctx)
+func NewClient(hub Hub, conn net.Conn, rType RoomType) (client *Client) {
+	mCtx, cancelFunc := context.WithCancel(hub.GetContext())
 	client = &Client{
 		Id:        uuid.New().ID(),
 		conn:      conn,
@@ -192,9 +213,7 @@ func NewClient(ctx context.Context, conn net.Conn, rType RoomType) (client *Clie
 		pingChan:  make(chan struct{}),
 	}
 	client.onLeaveRoom = func(room Room) {
-		if room != nil {
-			room.Leave(client)
-		}
+		room.Leave(client)
 	}
 	return
 }

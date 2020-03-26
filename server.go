@@ -11,6 +11,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
@@ -31,11 +33,20 @@ func main() {
 		userhub    = hub.NewUserHub()
 		theaterhub = hub.NewTheaterHub(userhub)
 		port       = flag.Int("port", 3000, "Server port")
+		env        = flag.String("env", "development", "Environment")
 	)
 
 	flag.Parse()
 
 	defer userhub.Close()
+
+	iC := make(chan os.Signal, 2)
+	signal.Notify(iC, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-iC
+		userhub.Close()
+		os.Exit(0)
+	}()
 
 	unixListener, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
@@ -44,21 +55,29 @@ func main() {
 		return
 	}
 
-	router.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
-		switch request.Header.Get("Websocket-Room") {
-		case "USER-ROOM":
-			userhub.Handler(writer, request)
-			return
-		case "THEATER-ROOM":
-			theaterhub.Handler(writer, request)
-			return
-		}
-	}).Methods("GET")
+	switch *env {
+	case "production":
+		// Handle caddy proxy server
+		router.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
+			switch request.Header.Get("Websocket-Room") {
+			case "USER-ROOM":
+				userhub.Handler(writer, request)
+				return
+			case "THEATER-ROOM":
+				theaterhub.Handler(writer, request)
+				return
+			}
+		}).Methods("GET")
+	default:
+		// routes for development
+		router.HandleFunc("/user", userhub.Handler)
+		router.HandleFunc("/theater", theaterhub.Handler)
+	}
 
 	http.Handle("/", router)
 
 	defer unixListener.Close()
 
-	log.Printf("Server running and listeting on :%d", *port)
+	log.Printf("%s server running and listeting on :%d", *env, *port)
 	log.Printf("http_err: %v", http.Serve(unixListener, nil))
 }
