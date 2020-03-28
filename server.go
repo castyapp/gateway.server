@@ -3,10 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/CastyLab/gateway.server/hub"
-	"github.com/getsentry/sentry-go"
-	"github.com/gorilla/mux"
-	_ "github.com/joho/godotenv/autoload"
 	"log"
 	"net"
 	"net/http"
@@ -14,13 +10,18 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/CastyLab/gateway.server/hub"
+	"github.com/getsentry/sentry-go"
+	"github.com/gorilla/mux"
+	_ "github.com/joho/godotenv/autoload"
 )
 
 func main() {
 
 	log.SetFlags(log.Lshortfile | log.Ltime)
 
-	if err := sentry.Init(sentry.ClientOptions{ Dsn: os.Getenv("SENTRY_DSN") }); err != nil {
+	if err := sentry.Init(sentry.ClientOptions{Dsn: os.Getenv("SENTRY_DSN")}); err != nil {
 		log.Fatal(err)
 	}
 
@@ -37,8 +38,6 @@ func main() {
 	)
 
 	flag.Parse()
-
-	defer userhub.Close()
 
 	iC := make(chan os.Signal, 2)
 	signal.Notify(iC, os.Interrupt, syscall.SIGTERM)

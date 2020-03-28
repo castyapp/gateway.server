@@ -3,6 +3,10 @@ package hub
 import (
 	"context"
 	"fmt"
+	"log"
+	"net"
+	"time"
+
 	"github.com/CastyLab/gateway.server/grpc"
 	"github.com/CastyLab/gateway.server/hub/protocol"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
@@ -13,11 +17,7 @@ import (
 	pb "github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
-	"log"
-	"net"
-	"time"
 )
-
 
 type Auth struct {
 	err           error
@@ -28,19 +28,19 @@ type Auth struct {
 }
 
 type Client struct {
-	Id             uint32
-	conn           net.Conn
-	Event          chan *protocol.Packet
-	ctx            context.Context
-	ctxCancel      context.CancelFunc
-	onAuthSuccess  func(auth Auth) Room
-	onAuthFailed   func()
-	onLeaveRoom    func(room Room)
-	auth           Auth
-	room           Room
-	roomType       RoomType
-	pingChan       chan struct{}
-	lastPingAt     time.Time
+	Id            uint32
+	conn          net.Conn
+	Event         chan *protocol.Packet
+	ctx           context.Context
+	ctxCancel     context.CancelFunc
+	onAuthSuccess func(auth Auth) Room
+	onAuthFailed  func()
+	onLeaveRoom   func(room Room)
+	auth          Auth
+	room          Room
+	roomType      RoomType
+	pingChan      chan struct{}
+	lastPingAt    time.Time
 }
 
 func (c *Client) GetUser() *proto.User {
@@ -198,6 +198,14 @@ func (c *Client) Authentication(event pb.Message) {
 func (c *Client) WriteMessage(msg []byte) (err error) {
 	err = wsutil.WriteServerMessage(c.conn, ws.OpBinary, msg)
 	return
+}
+
+func NewTheaterClient(hub Hub, conn net.Conn) (client *Client) {
+	return NewClient(hub, conn, TheaterRoomType)
+}
+
+func NewUserClient(hub Hub, conn net.Conn) (client *Client) {
+	return NewClient(hub, conn, UserRoomType)
 }
 
 func NewClient(hub Hub, conn net.Conn, rType RoomType) (client *Client) {

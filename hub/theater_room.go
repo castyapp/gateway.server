@@ -1,31 +1,30 @@
 package hub
 
 import (
-	"context"
+	"log"
+
 	"github.com/CastyLab/gateway.server/grpc"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
 	"github.com/CastyLab/grpc.proto/proto"
 	pb "github.com/golang/protobuf/proto"
-	"log"
-	"time"
 )
 
 /* Has a name, clients, count which holds the actual coutn and index which acts as the unique id */
 type TheaterRoom struct {
-	name       string
-	AuthToken  string
-	theater    *proto.Theater
-	clients    map[uint32] *Client
-	members    map[string] *UserWithClients
-	hub        *TheaterHub
+	name      string
+	AuthToken string
+	theater   *proto.Theater
+	clients   map[uint32]*Client
+	members   map[string]*UserWithClients
+	hub       *TheaterHub
 }
 
 func (r *TheaterRoom) SetAuthToken(token string) {
 	r.AuthToken = token
 }
 
-func (r *TheaterRoom) GetClients() map[uint32] *Client {
+func (r *TheaterRoom) GetClients() map[uint32]*Client {
 	return r.clients
 }
 
@@ -34,8 +33,7 @@ func (r *TheaterRoom) Join(client *Client) {
 
 	r.clients[client.Id] = client
 
-	mCtx, _ := context.WithTimeout(r.hub.ctx, 10 * time.Second)
-	response, err := grpc.UserServiceClient.GetUser(mCtx, &proto.AuthenticateRequest{
+	response, err := grpc.UserServiceClient.GetUser(r.hub.ctx, &proto.AuthenticateRequest{
 		Token: client.auth.token,
 	})
 
@@ -81,14 +79,13 @@ func (r *TheaterRoom) getMembers() (members []*proto.User) {
 }
 
 func (r *TheaterRoom) updateUserActivity(client *Client) {
-	mCtx, _ := context.WithTimeout(r.hub.ctx, 10 * time.Second)
-	_, _ = grpc.TheaterServiceClient.AddMember(mCtx, &proto.AddOrRemoveMemberRequest{
+	_, _ = grpc.TheaterServiceClient.AddMember(r.hub.ctx, &proto.AddOrRemoveMemberRequest{
 		TheaterId: r.theater.Id,
 		AuthRequest: &proto.AuthenticateRequest{
 			Token: client.auth.token,
 		},
 	})
-	_, _ = grpc.UserServiceClient.UpdateActivity(mCtx, &proto.UpdateActivityRequest{
+	_, _ = grpc.UserServiceClient.UpdateActivity(r.hub.ctx, &proto.UpdateActivityRequest{
 		Activity: &proto.Activity{
 			Id:       r.theater.Id,
 			Activity: r.theater.Title,
@@ -100,8 +97,7 @@ func (r *TheaterRoom) updateUserActivity(client *Client) {
 }
 
 func (r *TheaterRoom) removeUserActivity(client *Client) {
-	mCtx, _ := context.WithTimeout(r.hub.ctx, 10 * time.Second)
-	_, _ = grpc.UserServiceClient.RemoveActivity(mCtx, &proto.AuthenticateRequest{
+	_, _ = grpc.UserServiceClient.RemoveActivity(r.hub.ctx, &proto.AuthenticateRequest{
 		Token: client.auth.token,
 	})
 }
@@ -190,7 +186,7 @@ func (r *TheaterRoom) updateClientToFriends(client *Client, msg *protobuf.Person
 	if msg.State == enums.EMSG_PERSONAL_STATE_ONLINE {
 		if r.theater != nil {
 			pmae.Activity = &proto.Activity{
-				Id: r.theater.Id,
+				Id:       r.theater.Id,
 				Activity: r.theater.Title,
 			}
 		}
@@ -262,19 +258,18 @@ func (r *TheaterRoom) HandleEvents(client *Client) error {
 
 /* Constructor */
 func NewTheaterRoom(name string, hub *TheaterHub) (room *TheaterRoom, err error) {
-	mCtx, _ := context.WithTimeout(hub.ctx, 10 * time.Second)
-	response, err := grpc.TheaterServiceClient.GetTheater(mCtx, &proto.Theater{
+	response, err := grpc.TheaterServiceClient.GetTheater(hub.ctx, &proto.Theater{
 		Id: name,
 	})
 	if err != nil {
 		return nil, err
 	}
 	room = &TheaterRoom{
-		name:     name,
-		clients:  make(map[uint32] *Client, 0),
-		members:  make(map[string] *UserWithClients, 0),
-		theater:  response.Result,
-		hub:      hub,
+		name:    name,
+		clients: make(map[uint32]*Client, 0),
+		members: make(map[string]*UserWithClients, 0),
+		theater: response.Result,
+		hub:     hub,
 	}
 	hub.cmap.Set(name, room)
 	return

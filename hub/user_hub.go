@@ -3,6 +3,9 @@ package hub
 import (
 	"context"
 	"errors"
+	"log"
+	"net/http"
+
 	"github.com/CastyLab/gateway.server/grpc"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
@@ -10,10 +13,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/gobwas/ws"
 	"github.com/gorilla/websocket"
-	"github.com/orcaman/concurrent-map"
-	"log"
-	"net/http"
-	"time"
+	cmap "github.com/orcaman/concurrent-map"
 )
 
 /* Controls a bunch of rooms */
@@ -47,15 +47,14 @@ func (h *UserHub) RemoveRoom(name string) {
 	return
 }
 
-func (h *UserHub) RollbackUsersStatesToOffline()  {
+func (h *UserHub) RollbackUsersStatesToOffline() {
 	log.Println("\r- Rollback all online users to OFFLINE state!")
 	usersIds := make([]string, 0)
 	for uId := range h.cmap.Items() {
 		usersIds = append(usersIds, uId)
 	}
 	if len(usersIds) > 0 {
-		mCtx, _ := context.WithTimeout(h.ctx, 5 * time.Second)
-		response, err := grpc.UserServiceClient.RollbackStates(mCtx, &proto.RollbackStatesRequest{
+		response, err := grpc.UserServiceClient.RollbackStates(h.ctx, &proto.RollbackStatesRequest{
 			UsersIds: usersIds,
 		})
 		if err != nil {
@@ -84,7 +83,7 @@ func (h *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	client := NewClient(h, conn, UserRoomType)
+	client := NewUserClient(h, conn)
 	defer client.Close()
 
 	client.OnAuthorized(func(auth Auth) (room Room) {
@@ -102,12 +101,6 @@ func (h *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
 		}
 	})
 
-	client.OnLeave(func(room Room) {
-		if room != nil {
-			room.Leave(client)
-		}
-	})
-
 	client.Listen()
 	return
 }
@@ -115,7 +108,7 @@ func (h *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
 /* Constructor */
 func NewUserHub() *UserHub {
 	return &UserHub{
-		cmap: cmap.New(),
+		cmap:     cmap.New(),
 		upgrader: newUpgrader(),
 	}
 }

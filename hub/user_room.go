@@ -1,7 +1,6 @@
 package hub
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"log"
@@ -29,11 +28,10 @@ func (r *UserRoom) SetAuthToken(token string) {
 
 func (r *UserRoom) UpdateState(client *Client, state proto.PERSONAL_STATE) {
 	r.updateMeOnFriendsList(&protobuf.PersonalStateMsgEvent{
-		State: enums.EMSG_PERSONAL_STATE_ONLINE,
+		State: enums.EMSG_PERSONAL_STATE(state),
 		User:  client.auth.user,
 	})
-	mCtx, _ := context.WithTimeout(r.hub.ctx, 10*time.Second)
-	_, _ = grpc.UserServiceClient.UpdateState(mCtx, &proto.UpdateStateRequest{
+	_, _ = grpc.UserServiceClient.UpdateState(r.hub.ctx, &proto.UpdateStateRequest{
 		State: state,
 		AuthRequest: &proto.AuthenticateRequest{
 			Token: []byte(r.AuthToken),
@@ -59,7 +57,7 @@ func (r *UserRoom) Join(client *Client) {
 /* Removes client from room */
 func (r *UserRoom) Leave(client *Client) {
 	delete(r.clients, client.Id)
-	if len(r.clients) == 0 {
+	if len(r.clients) <= 1 {
 		r.UpdateState(client, proto.PERSONAL_STATE_OFFLINE)
 		r.hub.RemoveRoom(r.name)
 	}
@@ -140,8 +138,7 @@ func (r *UserRoom) updateMeOnFriendsList(psme *protobuf.PersonalStateMsgEvent) {
 
 func (r *UserRoom) fetchFriends() {
 	r.Friends = make([]string, 0)
-	mCtx, _ := context.WithTimeout(r.hub.ctx, 10*time.Second)
-	response, err := grpc.UserServiceClient.GetFriends(mCtx, &proto.AuthenticateRequest{
+	response, err := grpc.UserServiceClient.GetFriends(r.hub.ctx, &proto.AuthenticateRequest{
 		Token: []byte(r.AuthToken),
 	})
 	if err != nil {
@@ -169,9 +166,7 @@ func (r *UserRoom) HandleEvents(client *Client) error {
 							log.Println(err)
 							break
 						}
-
-						mCtx, _ := context.WithTimeout(r.hub.ctx, 10 * time.Second)
-						response, err := grpc.MessagesServiceClient.CreateMessage(mCtx, &proto.CreateMessageRequest{
+						response, err := grpc.MessagesServiceClient.CreateMessage(r.hub.ctx, &proto.CreateMessageRequest{
 							RecieverId: chatMessage.To,
 							Content:    string(chatMessage.Message),
 							AuthRequest: &proto.AuthenticateRequest{
@@ -183,7 +178,6 @@ func (r *UserRoom) HandleEvents(client *Client) error {
 							log.Println(err)
 							break
 						}
-
 						_ = r.SendMessage(response.Result)
 					}
 				}
