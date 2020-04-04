@@ -137,18 +137,10 @@ func (c *Client) Listen() error {
 					c.pingChan <- struct{}{}
 				case enums.EMSG_LOGON:
 					if !c.IsAuthenticated() {
-						var logOnEvent pb.Message
-						switch c.roomType {
-						case UserRoomType:
-							logOnEvent = new(protobuf.LogOnEvent)
-						case TheaterRoomType:
-							logOnEvent = new(protobuf.TheaterLogOnEvent)
-						}
-						if err := packet.ReadProtoMsg(logOnEvent); err != nil {
+						if err := c.Authentication(packet); err != nil {
 							log.Println(err)
 							break
 						}
-						c.Authentication(logOnEvent)
 					}
 				}
 
@@ -169,18 +161,31 @@ func getTokenFromLogOnEvent(event pb.Message) []byte {
 	return nil
 }
 
-func (c *Client) Authentication(event pb.Message) {
+func (c *Client) Authentication(packet *protocol.Packet) error {
+
+	var event pb.Message
+	switch c.roomType {
+	case UserRoomType:
+		event = new(protobuf.LogOnEvent)
+	case TheaterRoomType:
+		event = new(protobuf.TheaterLogOnEvent)
+	}
+	if err := packet.ReadProtoMsg(event); err != nil {
+		return err
+	}
+
 	token := getTokenFromLogOnEvent(event)
+
 	if !c.IsAuthenticated() {
-		response, err := grpc.UserServiceClient.GetUser(c.ctx, &proto.AuthenticateRequest{
+
+		mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+		response, err := grpc.UserServiceClient.GetUser(mCtx, &proto.AuthenticateRequest{
 			Token: token,
 		})
+
 		if err != nil {
 			c.auth = Auth{err: err}
-			c.onAuthFailed()
-			_ = c.conn.Close()
-			c.ctxCancel()
-			return
+			return err
 		} else {
 			c.auth = Auth{
 				user:          response.Result,
@@ -192,7 +197,9 @@ func (c *Client) Authentication(event pb.Message) {
 			c.room = c.onAuthSuccess(c.auth)
 			go c.room.HandleEvents(c)
 		}
+
 	}
+	return nil
 }
 
 func (c *Client) WriteMessage(msg []byte) (err error) {

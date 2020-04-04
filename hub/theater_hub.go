@@ -73,7 +73,7 @@ func (h *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	client := NewClient(h, conn, TheaterRoomType)
+	client := NewTheaterClient(h, conn)
 	defer client.Close()
 
 	client.OnAuthorized(func(auth Auth) (room Room) {

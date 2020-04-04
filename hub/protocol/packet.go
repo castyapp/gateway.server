@@ -3,6 +3,7 @@ package protocol
 import (
 	"bytes"
 	"encoding/binary"
+
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
 	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
 	"github.com/golang/protobuf/proto"
@@ -10,9 +11,9 @@ import (
 
 // Represents an incoming, partially unread message.
 type Packet struct {
-	EMsg        enums.EMSG
-	IsProto     bool
-	Data        []byte
+	EMsg    enums.EMSG
+	IsProto bool
+	Data    []byte
 }
 
 func NewPacket(data []byte) (*Packet, error) {
@@ -36,9 +37,9 @@ func NewPacket(data []byte) (*Packet, error) {
 		}
 
 		return &Packet{
-			EMsg:        eMsg,
-			IsProto:     true,
-			Data:        data,
+			EMsg:    eMsg,
+			IsProto: true,
+			Data:    data,
 		}, nil
 	}
 
@@ -49,9 +50,9 @@ func NewPacket(data []byte) (*Packet, error) {
 		return nil, err
 	}
 	return &Packet{
-		EMsg:        eMsg,
-		IsProto:     false,
-		Data:        data,
+		EMsg:    eMsg,
+		IsProto: false,
+		Data:    data,
 	}, nil
 }
 
