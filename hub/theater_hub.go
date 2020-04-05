@@ -69,8 +69,6 @@ func (hub *TheaterHub) Close() error {
 /* Get ws conn. and hands it over to correct room */
 func (hub *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 
-	hub.WithContext(req.Context())
-
 	// Upgrade connection to websocket
 	conn, _, _, err := ws.UpgradeHTTP(req, w)
 	if err != nil {
@@ -80,9 +78,9 @@ func (hub *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Create a new client for user
-	client := NewTheaterClient(hub, conn)
+	client := NewTheaterClient(req.Context(), conn)
 
-	log.Printf("[%d] New client connected", client.Id)
+	log.Printf("[%s] New client connected", client.Id)
 
 	// Close connection after client disconnected
 	defer client.Close()

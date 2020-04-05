@@ -219,7 +219,7 @@ func (room *TheaterRoom) Leave(client *Client) {
 	//room.removeUserActivity(client)
 
 	// check if room clients are empty then removing room from cmp
-	if len(room.clients) == 0 {
+	if room.clients.Count() == 0 {
 		room.hub.RemoveRoom(room.theater.Id)
 	}
 }

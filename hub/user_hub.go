@@ -47,7 +47,7 @@ func (hub *UserHub) GetOrCreateRoom(name string) (room Room) {
 		return r.(*UserRoom)
 	}
 	room = NewUserRoom(name, hub)
-	hub.cmap.Set(name, room)
+	hub.cmap.SetIfAbsent(name, room)
 	return
 }
 
@@ -94,8 +94,6 @@ func (hub *UserHub) Close() error {
 /* Get ws conn. and hands it over to correct room */
 func (hub *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
 
-	hub.WithContext(req.Context())
-
 	// Upgrade connection to websocket
 	conn, _, _, err := ws.UpgradeHTTP(req, w)
 	if err != nil {
@@ -105,12 +103,14 @@ func (hub *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Create a new client for user
-	client := NewUserClient(hub, conn)
+	client := NewUserClient(req.Context(), conn)
 
 	log.Printf("[%s] New client connected", client.Id)
 
 	// Close connection after client disconnected
-	defer client.Close()
+	defer func() {
+		log.Println(client.Close())
+	}()
 
 	// Join user room if client recieved authorized
 	client.OnAuthorized(func(auth Auth) (room Room) {
@@ -129,7 +129,6 @@ func (hub *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
 
 	// Listen on client events
 	client.Listen()
-	return
 }
 
 // Create a new userhub

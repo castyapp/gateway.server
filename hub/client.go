@@ -93,59 +93,65 @@ func (c *Client) PingPongHandler() {
 		case <-c.pingChan:
 			c.lastPingAt = time.Now()
 			if buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PONG, nil); err == nil {
-				_ = c.WriteMessage(buffer.Bytes())
+				c.WriteMessage(buffer.Bytes())
 			}
 		}
 	}
 }
 
 // Listen of client events
-func (c *Client) Listen() error {
-
-	go c.PingPongHandler()
+func (c *Client) Listen() {
 
 	defer func() {
 		log.Printf("[%s] End of events!", c.Id)
 		close(c.Event)
 	}()
 
+	go c.PingPongHandler()
 	c.pingChan <- struct{}{}
 
 	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		default:
 
-		data, err := wsutil.ReadClientBinary(c.conn)
-		if err != nil {
-			c.ctxCancel()
-			return c.Close()
-		}
-
-		if data != nil {
-			packet, err := protocol.NewPacket(data)
+			data, err := wsutil.ReadClientBinary(c.conn)
 			if err != nil {
-				log.Printf("[%s] Error while creating new packet: %v", c.Id, err)
-				continue
+				log.Println(err)
+				return
 			}
 
-			if !packet.IsProto {
-				log.Printf("[%s] Packet type should be Protobuf", c.Id)
-				continue
-			}
-
-			switch packet.EMsg {
-			case proto.EMSG_PING:
-				c.pingChan <- struct{}{}
-			case proto.EMSG_LOGON:
-				log.Printf("[%s] Authorizing...", c.Id)
-				if !c.IsAuthenticated() {
-					if err := c.Authentication(packet); err != nil {
-						c.ctxCancel()
-						return c.Close()
-					}
-					log.Printf("[%s] Authorized!", c.Id)
+			if data != nil {
+				packet, err := protocol.NewPacket(data)
+				if err != nil {
+					log.Printf("[%s] Error while creating new packet: %v", c.Id, err)
+					continue
 				}
-			}
 
-			c.Event <- packet
+				if !packet.IsProto {
+					log.Printf("[%s] Packet type should be Protobuf", c.Id)
+					continue
+				}
+
+				switch packet.EMsg {
+				case proto.EMSG_PING:
+					c.pingChan <- struct{}{}
+				case proto.EMSG_LOGON:
+					log.Printf("[%s] Authorizing...", c.Id)
+					if !c.IsAuthenticated() {
+						if err := c.Authentication(packet); err != nil {
+							log.Println(err)
+							c.ctxCancel()
+							c.Close()
+							return
+						}
+						log.Printf("[%s] Authorized!", c.Id)
+					}
+				}
+
+				c.Event <- packet
+			}
 		}
 	}
 
@@ -211,18 +217,18 @@ func (c *Client) WriteMessage(msg []byte) (err error) {
 }
 
 // Create a new theater client
-func NewTheaterClient(hub Hub, conn net.Conn) (client *Client) {
-	return NewClient(hub, conn, TheaterRoomType)
+func NewTheaterClient(ctx context.Context, conn net.Conn) (client *Client) {
+	return NewClient(ctx, conn, TheaterRoomType)
 }
 
 // Create a new user client
-func NewUserClient(hub Hub, conn net.Conn) (client *Client) {
-	return NewClient(hub, conn, UserRoomType)
+func NewUserClient(ctx context.Context, conn net.Conn) (client *Client) {
+	return NewClient(ctx, conn, UserRoomType)
 }
 
 // Create a new client
-func NewClient(hub Hub, conn net.Conn, rType RoomType) *Client {
-	mCtx, cancelFunc := context.WithCancel(hub.GetContext())
+func NewClient(ctx context.Context, conn net.Conn, rType RoomType) *Client {
+	mCtx, cancelFunc := context.WithCancel(ctx)
 	clientID := strconv.Itoa(int(uuid.New().ID()))
 	client := &Client{
 		Id:        clientID,
