@@ -86,6 +86,7 @@ func (c *Client) PingPongHandler() {
 			if diff.Round(time.Second) > time.Minute {
 				c.ctxCancel()
 				c.Close()
+				return
 			}
 		case <-c.pingChan:
 			c.lastPingAt = time.Now()
@@ -105,6 +106,8 @@ func (c *Client) Listen() error {
 		log.Printf("[%d] End of events!", c.Id)
 		close(c.Event)
 	}()
+
+	c.pingChan <- struct{}{}
 
 	for {
 
@@ -137,7 +140,6 @@ func (c *Client) Listen() error {
 						return c.Close()
 					}
 					log.Printf("[%d] Authorized!", c.Id)
-					c.pingChan <- struct{}{}
 				}
 			}
 
