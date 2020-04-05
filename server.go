@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -18,6 +19,20 @@ import (
 )
 
 func main() {
+
+	go func() {
+
+		ticker := time.NewTicker(3 * time.Second)
+
+		for {
+			select {
+			case <-ticker.C:
+				log.Printf("Number of goroutines: [%d]", runtime.NumGoroutine())
+				break
+			}
+		}
+
+	}()
 
 	log.SetFlags(log.Lshortfile | log.Ltime)
 

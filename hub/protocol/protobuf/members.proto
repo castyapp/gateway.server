@@ -1,8 +1,0 @@
-syntax = "proto3";
-package protobuf;
-
-import "messages/user.proto";
-
-message TheaterMembers {
-    repeated messages.User members = 1;
-}

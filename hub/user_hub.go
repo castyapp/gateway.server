@@ -3,12 +3,12 @@ package hub
 import (
 	"context"
 	"errors"
+	"github.com/CastyLab/grpc.proto/protocol"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/CastyLab/gateway.server/grpc"
-	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
-	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
 	"github.com/CastyLab/grpc.proto/proto"
 	"github.com/getsentry/sentry-go"
 	"github.com/gobwas/ws"
@@ -23,38 +23,53 @@ type UserHub struct {
 	ctx      context.Context
 }
 
-func (h *UserHub) GetContext() context.Context {
-	return h.ctx
+// set userhub context
+func (hub *UserHub) WithContext(ctx context.Context) {
+	hub.ctx = ctx
 }
 
-func (h *UserHub) FindRoom(name string) (room Room, err error) {
-	if r, ok := h.cmap.Get(name); ok {
+// get userhub context
+func (hub *UserHub) GetContext() context.Context {
+	return hub.ctx
+}
+
+// find user's room
+func (hub *UserHub) FindRoom(name string) (room Room, err error) {
+	if r, ok := hub.cmap.Get(name); ok {
 		return r.(*UserRoom), nil
 	}
 	return nil, errors.New("user room is missing from cmp")
 }
 
-/* If room doesn't exist creates it then returns it */
-func (h *UserHub) GetOrCreateRoom(name string) (room Room) {
-	if r, ok := h.cmap.Get(name); ok {
+// Create or get user's room
+func (hub *UserHub) GetOrCreateRoom(name string) (room Room) {
+	if r, ok := hub.cmap.Get(name); ok {
 		return r.(*UserRoom)
 	}
-	return NewUserRoom(name, h)
-}
-
-func (h *UserHub) RemoveRoom(name string) {
-	h.cmap.Remove(name)
+	room = NewUserRoom(name, hub)
+	hub.cmap.Set(name, room)
 	return
 }
 
-func (h *UserHub) RollbackUsersStatesToOffline() {
+// remove user's room from concurrent map
+func (hub *UserHub) RemoveRoom(name string) {
+	hub.cmap.Remove(name)
+	return
+}
+
+func (hub *UserHub) RollbackUsersStatesToOffline() {
+
 	log.Println("\r- Rollback all online users to OFFLINE state!")
+
+	// Get user ids connected to server
 	usersIds := make([]string, 0)
-	for uId := range h.cmap.Items() {
+	for uId := range hub.cmap.Items() {
 		usersIds = append(usersIds, uId)
 	}
+
 	if len(usersIds) > 0 {
-		response, err := grpc.UserServiceClient.RollbackStates(h.ctx, &proto.RollbackStatesRequest{
+		mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+		response, err := grpc.UserServiceClient.RollbackStates(mCtx, &proto.RollbackStatesRequest{
 			UsersIds: usersIds,
 		})
 		if err != nil {
@@ -67,15 +82,21 @@ func (h *UserHub) RollbackUsersStatesToOffline() {
 	}
 }
 
-func (h *UserHub) Close() error {
-	h.RollbackUsersStatesToOffline()
+// Close user hub
+func (hub *UserHub) Close() error {
+
+	// roll back all users back to OFFLINE state if user hub closed
+	hub.RollbackUsersStatesToOffline()
+
 	return nil
 }
 
 /* Get ws conn. and hands it over to correct room */
-func (h *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
+func (hub *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
 
-	h.ctx = req.Context()
+	hub.WithContext(req.Context())
+
+	// Upgrade connection to websocket
 	conn, _, _, err := ws.UpgradeHTTP(req, w)
 	if err != nil {
 		sentry.CaptureException(err)
@@ -83,29 +104,35 @@ func (h *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	client := NewUserClient(h, conn)
+	// Create a new client for user
+	client := NewUserClient(hub, conn)
+
+	log.Printf("[%d] New client connected", client.Id)
+
+	// Close connection after client disconnected
 	defer client.Close()
 
+	// Join user room if client recieved authorized
 	client.OnAuthorized(func(auth Auth) (room Room) {
-		event := auth.event.(*protobuf.LogOnEvent)
-		room = h.GetOrCreateRoom(auth.user.Id)
-		room.SetAuthToken(string(event.Token))
+		room = hub.GetOrCreateRoom(auth.User().Id)
 		room.Join(client)
 		return
 	})
 
+	// Send Unauthorized message to client if client Unauthorized and close connection
 	client.OnUnauthorized(func() {
-		buffer, err := protobuf.NewMsgProtobuf(enums.EMSG_UNAUTHORIZED, nil)
+		buffer, err := protocol.NewMsgProtobuf(proto.EMSG_UNAUTHORIZED, nil)
 		if err == nil {
 			_ = client.WriteMessage(buffer.Bytes())
 		}
 	})
 
+	// Listen on client events
 	client.Listen()
 	return
 }
 
-/* Constructor */
+// Create a new userhub
 func NewUserHub() *UserHub {
 	return &UserHub{
 		cmap:     cmap.New(),

@@ -1,6 +1,5 @@
 package hub
 
-
 type RoomType int
 
 const (
@@ -12,5 +11,5 @@ type Room interface {
 	Join(*Client)
 	HandleEvents(*Client) error
 	Leave(*Client)
-	SetAuthToken(string)
+	GetClients() map[uint32] *Client
 }

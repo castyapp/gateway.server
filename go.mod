@@ -3,9 +3,9 @@ module github.com/CastyLab/gateway.server
 go 1.14
 
 require (
-	github.com/CastyLab/grpc.proto v0.0.0-20200404003843-0a3ee781f771
+	github.com/CastyLab/grpc.proto v0.0.0-20200405175143-ddc5f6e1bc03
 	github.com/getsentry/sentry-go v0.5.1
-	github.com/gobwas/ws v1.0.2
+	github.com/gobwas/ws v1.0.3
 	github.com/golang/protobuf v1.3.4
 	github.com/google/uuid v1.1.1
 	github.com/gorilla/mux v1.7.4

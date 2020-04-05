@@ -3,15 +3,14 @@ package hub
 import (
 	"context"
 	"errors"
-	"log"
-	"net/http"
-
-	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
-	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
+	"github.com/CastyLab/grpc.proto/proto"
+	"github.com/CastyLab/grpc.proto/protocol"
 	"github.com/getsentry/sentry-go"
 	"github.com/gobwas/ws"
 	"github.com/gorilla/websocket"
 	cmap "github.com/orcaman/concurrent-map"
+	"log"
+	"net/http"
 )
 
 /* Controls a bunch of rooms */
@@ -39,6 +38,7 @@ func (h *TheaterHub) GetOrCreateRoom(name string) (room Room) {
 		return r.(*TheaterRoom)
 	}
 	room, _ = NewTheaterRoom(name, h)
+	h.cmap.Set(name, room)
 	return
 }
 
@@ -77,14 +77,14 @@ func (h *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 	defer client.Close()
 
 	client.OnAuthorized(func(auth Auth) (room Room) {
-		event := auth.event.(*protobuf.TheaterLogOnEvent)
+		event := auth.Event().(*proto.TheaterLogOnEvent)
 		room = h.GetOrCreateRoom(string(event.Room))
 		room.Join(client)
 		return
 	})
 
 	client.OnUnauthorized(func() {
-		buffer, err := protobuf.NewMsgProtobuf(enums.EMSG_UNAUTHORIZED, nil)
+		buffer, err := protocol.NewMsgProtobuf(proto.EMSG_UNAUTHORIZED, nil)
 		if err == nil {
 			_ = client.WriteMessage(buffer.Bytes())
 		}

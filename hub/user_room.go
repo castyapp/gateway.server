@@ -1,14 +1,14 @@
 package hub
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"github.com/CastyLab/grpc.proto/protocol"
 	"log"
 	"time"
 
 	"github.com/CastyLab/gateway.server/grpc"
-	"github.com/CastyLab/gateway.server/hub/protocol/protobuf"
-	"github.com/CastyLab/gateway.server/hub/protocol/protobuf/enums"
 	"github.com/CastyLab/grpc.proto/proto"
 	"github.com/golang/protobuf/ptypes"
 )
@@ -18,23 +18,25 @@ type UserRoom struct {
 	name      string
 	hub       *UserHub
 	clients   map[uint32]*Client
-	AuthToken string
-	Friends   []string
+	friends   map[string] *proto.User
+	Err       chan error
+	client    *Client
 }
 
-func (r *UserRoom) SetAuthToken(token string) {
-	r.AuthToken = token
+func (r *UserRoom) GetClients() map[uint32]*Client {
+	return r.clients
 }
 
 func (r *UserRoom) UpdateState(client *Client, state proto.PERSONAL_STATE) {
-	r.updateMeOnFriendsList(&protobuf.PersonalStateMsgEvent{
-		State: enums.EMSG_PERSONAL_STATE(state),
-		User:  client.auth.user,
+	r.updateMeOnFriendsList(&proto.PersonalStateMsgEvent{
+		State: state,
+		User:  client.GetUser(),
 	})
-	_, _ = grpc.UserServiceClient.UpdateState(r.hub.ctx, &proto.UpdateStateRequest{
+	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+	_, _ = grpc.UserServiceClient.UpdateState(mCtx, &proto.UpdateStateRequest{
 		State: state,
 		AuthRequest: &proto.AuthenticateRequest{
-			Token: []byte(r.AuthToken),
+			Token: client.auth.Token(),
 		},
 	})
 }
@@ -43,14 +45,16 @@ func (r *UserRoom) UpdateState(client *Client, state proto.PERSONAL_STATE) {
 func (r *UserRoom) Join(client *Client) {
 
 	r.clients[client.Id] = client
+	r.client = client
+
+	r.fetchFriends()
 
 	if len(r.clients) == 1 {
-		r.fetchFriends()
 		r.UpdateState(client, proto.PERSONAL_STATE_ONLINE)
 	}
 
-	if err := protobuf.BrodcastMsgProtobuf(client.conn, enums.EMSG_AUTHORIZED, nil); err != nil {
-		log.Println(err)
+	if err := protocol.BrodcastMsgProtobuf(client.conn, proto.EMSG_AUTHORIZED, nil); err != nil {
+		r.Err <- err
 	}
 }
 
@@ -81,13 +85,13 @@ func (r *UserRoom) SendMessage(message *proto.Message) error {
 
 		createdAt, _ := ptypes.TimestampProto(time.Now())
 
-		entry := &protobuf.ChatMsgEvent{
+		entry := &proto.ChatMsgEvent{
 			Message:   []byte(message.Content),
 			From:      string(from),
 			CreatedAt: createdAt,
 		}
 
-		buffer, err := protobuf.NewMsgProtobuf(enums.EMSG_CHAT_MESSAGES, entry)
+		buffer, err := protocol.NewMsgProtobuf(proto.EMSG_CHAT_MESSAGES, entry)
 		if err != nil {
 			return err
 		}
@@ -102,14 +106,14 @@ func (r *UserRoom) SendMessage(message *proto.Message) error {
 	return errors.New("could not find friend's room")
 }
 
-func (r *UserRoom) updateMyActivityOnFriendsList(psme *protobuf.PersonalActivityMsgEvent) {
+func (r *UserRoom) updateMyActivityOnFriendsList(psme *proto.PersonalActivityMsgEvent) {
 
-	for _, fr := range r.Friends {
-		if fc, ok := r.hub.cmap.Get(fr); ok {
+	for _, fr := range r.friends {
+		if fc, ok := r.hub.cmap.Get(fr.Id); ok {
 
 			friendRoom := fc.(*UserRoom)
 
-			buffer, err := protobuf.NewMsgProtobuf(enums.EMSG_PERSONAL_ACTIVITY_CHANGED, psme)
+			buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PERSONAL_ACTIVITY_CHANGED, psme)
 			if err != nil {
 				log.Println(err)
 				continue
@@ -121,15 +125,17 @@ func (r *UserRoom) updateMyActivityOnFriendsList(psme *protobuf.PersonalActivity
 
 }
 
-func (r *UserRoom) updateMeOnFriendsList(psme *protobuf.PersonalStateMsgEvent) {
-	for _, fr := range r.Friends {
-		if fc, ok := r.hub.cmap.Get(fr); ok {
+func (r *UserRoom) updateMeOnFriendsList(psme *proto.PersonalStateMsgEvent) {
+	for _, fr := range r.friends {
+		if fc, ok := r.hub.cmap.Get(fr.Id); ok {
 			friendRoom := fc.(*UserRoom)
-			buffer, err := protobuf.NewMsgProtobuf(enums.EMSG_PERSONAL_STATE_CHANGED, psme)
+			buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PERSONAL_STATE_CHANGED, psme)
 			if err != nil {
+				r.Err <- err
 				continue
 			}
 			if err := friendRoom.Send(buffer.Bytes()); err != nil {
+				r.Err <- err
 				continue
 			}
 		}
@@ -137,15 +143,16 @@ func (r *UserRoom) updateMeOnFriendsList(psme *protobuf.PersonalStateMsgEvent) {
 }
 
 func (r *UserRoom) fetchFriends() {
-	r.Friends = make([]string, 0)
-	response, err := grpc.UserServiceClient.GetFriends(r.hub.ctx, &proto.AuthenticateRequest{
-		Token: []byte(r.AuthToken),
+	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+	response, err := grpc.UserServiceClient.GetFriends(mCtx, &proto.AuthenticateRequest{
+		Token: r.client.auth.Token(),
 	})
 	if err != nil {
+		r.Err <- err
 		return
 	}
 	for _, friend := range response.Result {
-		r.Friends = append(r.Friends, friend.Id)
+		r.friends[friend.Id] = friend
 	}
 	return
 }
@@ -154,31 +161,35 @@ func (r *UserRoom) fetchFriends() {
 func (r *UserRoom) HandleEvents(client *Client) error {
 	for {
 		select {
-		case <-r.hub.ctx.Done():
+		case <-r.hub.GetContext().Done():
 			return errors.New("context closed")
 		default:
 			if event := <-client.Event; event != nil {
+
+				log.Printf("[%d] Recieved new packet <- [%s]", client.Id,  event.EMsg)
+
 				switch event.EMsg {
-				case enums.EMSG_NEW_CHAT_MESSAGE:
+				case proto.EMSG_NEW_CHAT_MESSAGE:
 					if client.IsAuthenticated() {
-						chatMessage := new(protobuf.ChatMsgEvent)
+						chatMessage := new(proto.ChatMsgEvent)
 						if err := event.ReadProtoMsg(chatMessage); err != nil {
-							log.Println(err)
+							r.Err <- err
 							break
 						}
-						response, err := grpc.MessagesServiceClient.CreateMessage(r.hub.ctx, &proto.CreateMessageRequest{
+						mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+						response, err := grpc.MessagesServiceClient.CreateMessage(mCtx, &proto.CreateMessageRequest{
 							RecieverId: chatMessage.To,
 							Content:    string(chatMessage.Message),
 							AuthRequest: &proto.AuthenticateRequest{
-								Token: client.auth.token,
+								Token: client.auth.Token(),
 							},
 						})
 
 						if err != nil {
-							log.Println(err)
+							r.Err <- err
 							break
 						}
-						_ = r.SendMessage(response.Result)
+						r.Err <- r.SendMessage(response.Result)
 					}
 				}
 			}
@@ -187,13 +198,12 @@ func (r *UserRoom) HandleEvents(client *Client) error {
 }
 
 /* Constructor */
-func NewUserRoom(name string, hub *UserHub) (newRoom *UserRoom) {
-	newRoom = &UserRoom{
+func NewUserRoom(name string, hub *UserHub) (room *UserRoom) {
+	return &UserRoom{
 		name:    name,
-		clients: make(map[uint32]*Client),
-		Friends: make([]string, 0),
+		clients: make(map[uint32] *Client),
+		friends: make(map[string] *proto.User, 0),
 		hub:     hub,
+		Err:     make(chan error),
 	}
-	hub.cmap.Set(name, newRoom)
-	return
 }

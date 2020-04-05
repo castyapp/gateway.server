@@ -1,8 +1,0 @@
-syntax = "proto3";
-package protobuf;
-
-import "messages/notification.proto";
-
-message NotificationMsgEvent {
-    messages.Notification notification = 1;
-}
