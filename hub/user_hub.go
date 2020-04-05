@@ -107,7 +107,7 @@ func (hub *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
 	// Create a new client for user
 	client := NewUserClient(hub, conn)
 
-	log.Printf("[%d] New client connected", client.Id)
+	log.Printf("[%s] New client connected", client.Id)
 
 	// Close connection after client disconnected
 	defer client.Close()

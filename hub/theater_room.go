@@ -2,7 +2,9 @@ package hub
 
 import (
 	"context"
+	"errors"
 	"github.com/CastyLab/grpc.proto/protocol"
+	cmap "github.com/orcaman/concurrent-map"
 	"time"
 
 	"github.com/CastyLab/gateway.server/grpc"
@@ -15,10 +17,10 @@ type TheaterRoom struct {
 	theater   *proto.Theater
 
 	// all clients connected to this room
-	clients   map[uint32] *Client
+	clients   cmap.ConcurrentMap
 
 	// members with multiple clients
-	members   map[string] *UserWithClients
+	members   cmap.ConcurrentMap
 
 	// user hub for updating user's activities
 	hub       *TheaterHub
@@ -28,8 +30,12 @@ type TheaterRoom struct {
 }
 
 // Get room clients
-func (room *TheaterRoom) GetClients() map[uint32]*Client {
-	return room.clients
+func (room *TheaterRoom) GetClients() (clients []*Client) {
+	clients = make([]*Client, 0)
+	for _, client := range room.clients.Items() {
+		clients = append(clients, client.(*Client))
+	}
+	return
 }
 
 // Get room clients
@@ -39,28 +45,31 @@ func (room *TheaterRoom) GetContext() context.Context {
 
 // Get current user's client
 func (room *TheaterRoom) AddClient(client *Client) {
-	room.clients[client.Id] = client
+	room.clients.Set(client.Id, client)
 }
 
 // Get current user's client
 func (room *TheaterRoom) GetClient(client *Client) *Client {
-	return room.clients[client.Id]
+	cl, _ := room.clients.Get(client.Id)
+	return cl.(*Client)
 }
 
-func (room *TheaterRoom) AddMember(clients *UserWithClients) {
-	room.members[clients.User.Id] = clients
+func (room *TheaterRoom) AddMember(member *MemberWithClients) {
+	room.members.Set(member.User.Id, member)
 }
 
 func (room *TheaterRoom) RemoveMember(member *proto.User) {
-	delete(room.members, member.Id)
+	room.members.Remove(member.Id)
 }
 
-func (room *TheaterRoom) GetMember(user *proto.User) *UserWithClients {
-	return room.members[user.Id]
+func (room *TheaterRoom) GetMember(user *proto.User) *MemberWithClients {
+	cl, _ := room.members.Get(user.Id)
+	return cl.(*MemberWithClients)
 }
 
-func (room *TheaterRoom) GetMemberFromClient(client *Client) *UserWithClients {
-	return room.members[client.GetUser().Id]
+func (room *TheaterRoom) GetMemberFromClient(client *Client) *MemberWithClients {
+	mem, _ := room.members.Get(client.GetUser().Id)
+	return mem.(*MemberWithClients)
 }
 
 // Join a client to room
@@ -95,7 +104,7 @@ func (room *TheaterRoom) Join(client *Client) {
 	} else {
 
 		// create new user with clients
-		userWithClients := NewUserWithClients(member)
+		userWithClients := NewMemberWithClients(member)
 		userWithClients.AddClient(client)
 
 		// register user with clients to room
@@ -124,15 +133,14 @@ func (room *TheaterRoom) Join(client *Client) {
 }
 
 // Check member exists in room
-func (room *TheaterRoom) HasMember(user *proto.User) (ok bool) {
-	_, ok = room.members[user.Id]
-	return
+func (room *TheaterRoom) HasMember(member *proto.User) (ok bool) {
+	return room.members.Has(member.Id)
 }
 
 // Get members the room
 func (room *TheaterRoom) GetMembers() (members []*proto.User) {
-	for _, member := range room.members {
-		members = append(members, member.User)
+	for _, member := range room.members.Items() {
+		members = append(members, member.(*MemberWithClients).User)
 	}
 	return
 }
@@ -169,7 +177,7 @@ func (room *TheaterRoom) removeUserActivity(client *Client) {
 
 // removing client from room
 func (room *TheaterRoom) RemoveClient(client *Client) {
-	delete(room.clients, client.Id)
+	room.clients.Remove(client.Id)
 }
 
 /* Removes client from room */
@@ -217,31 +225,32 @@ func (room *TheaterRoom) Leave(client *Client) {
 }
 
 /* Send to specific client */
-func (room *TheaterRoom) SendTo(id uint32, msg []byte) (err error) {
-	if client := room.clients[id]; client != nil {
-		err = client.WriteMessage(msg)
+func (room *TheaterRoom) SendTo(id string, msg []byte) error {
+	client, ok := room.clients.Get(id)
+	if !ok {
+		return errors.New("could not find client")
 	}
-	return
+	return client.(*Client).WriteMessage(msg)
 }
 
 /* Broadcast to every client */
 func (room *TheaterRoom) BroadcastAll(msg []byte) (err error) {
-	for _, client := range room.clients {
+	for _, client := range room.GetClients() {
 		err = client.WriteMessage(msg)
 	}
 	return
 }
 
 func (room *TheaterRoom) SendAll(msg []byte) (err error) {
-	for _, client := range room.clients {
+	for _, client := range room.GetClients() {
 		err = client.WriteMessage(msg)
 	}
 	return
 }
 
 /* Broadcast to all except */
-func (room *TheaterRoom) BroadcastEx(senderid uint32, msg []byte) (err error) {
-	for _, client := range room.clients {
+func (room *TheaterRoom) BroadcastEx(senderid string, msg []byte) (err error) {
+	for _, client := range room.GetClients() {
 		if client.Id != senderid {
 			err = client.WriteMessage(msg)
 		}
@@ -361,8 +370,8 @@ func NewTheaterRoom(name string, hub *TheaterHub) (room *TheaterRoom, err error)
 		return nil, err
 	}
 	return &TheaterRoom{
-		clients: make(map[uint32]*Client, 0),
-		members: make(map[string]*UserWithClients, 0),
+		clients: cmap.New(),
+		members: cmap.New(),
 		theater: response.Result,
 		hub:     hub,
 		Err:     make(chan error),

@@ -11,5 +11,5 @@ type Room interface {
 	Join(*Client)
 	HandleEvents(*Client) error
 	Leave(*Client)
-	GetClients() map[uint32] *Client
+	GetClients() []*Client
 }

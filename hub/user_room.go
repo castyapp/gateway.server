@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/CastyLab/grpc.proto/protocol"
+	cmap "github.com/orcaman/concurrent-map"
 	"log"
 	"time"
 
@@ -17,14 +18,18 @@ import (
 type UserRoom struct {
 	name      string
 	hub       *UserHub
-	clients   map[uint32]*Client
+	clients   cmap.ConcurrentMap
 	friends   map[string] *proto.User
-	Err       chan error
 	client    *Client
+	Err       chan error
 }
 
-func (r *UserRoom) GetClients() map[uint32]*Client {
-	return r.clients
+func (r *UserRoom) GetClients() (clients []*Client) {
+	clients = make([]*Client, 0)
+	for _, client := range r.clients.Items() {
+		clients = append(clients, client.(*Client))
+	}
+	return
 }
 
 func (r *UserRoom) UpdateState(client *Client, state proto.PERSONAL_STATE) {
@@ -44,7 +49,8 @@ func (r *UserRoom) UpdateState(client *Client, state proto.PERSONAL_STATE) {
 /* Add a conn to clients map so that it can be managed */
 func (r *UserRoom) Join(client *Client) {
 
-	r.clients[client.Id] = client
+	r.clients.Set(client.Id, client)
+
 	r.client = client
 
 	r.fetchFriends()
@@ -60,7 +66,7 @@ func (r *UserRoom) Join(client *Client) {
 
 /* Removes client from room */
 func (r *UserRoom) Leave(client *Client) {
-	delete(r.clients, client.Id)
+	r.clients.Remove(client.Id)
 	if len(r.clients) <= 1 {
 		r.UpdateState(client, proto.PERSONAL_STATE_OFFLINE)
 		r.hub.RemoveRoom(r.name)
@@ -68,7 +74,7 @@ func (r *UserRoom) Leave(client *Client) {
 }
 
 func (r *UserRoom) Send(msg []byte) (err error) {
-	for _, client := range r.clients {
+	for _, client := range r.GetClients() {
 		err = client.WriteMessage(msg)
 	}
 	return
@@ -166,7 +172,7 @@ func (r *UserRoom) HandleEvents(client *Client) error {
 		default:
 			if event := <-client.Event; event != nil {
 
-				log.Printf("[%d] Recieved new packet <- [%s]", client.Id,  event.EMsg)
+				log.Printf("[%s] Recieved new packet <- [%s]", client.Id,  event.EMsg)
 
 				switch event.EMsg {
 				case proto.EMSG_NEW_CHAT_MESSAGE:
@@ -201,7 +207,7 @@ func (r *UserRoom) HandleEvents(client *Client) error {
 func NewUserRoom(name string, hub *UserHub) (room *UserRoom) {
 	return &UserRoom{
 		name:    name,
-		clients: make(map[uint32] *Client),
+		clients: cmap.New(),
 		friends: make(map[string] *proto.User, 0),
 		hub:     hub,
 		Err:     make(chan error),

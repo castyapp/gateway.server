@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"github.com/CastyLab/grpc.proto/protocol"
+	cmap "github.com/orcaman/concurrent-map"
 	"log"
 	"net"
+	"strconv"
 	"time"
 
 	"github.com/CastyLab/gateway.server/grpc"
@@ -18,7 +20,7 @@ import (
 )
 
 type Client struct {
-	Id            uint32
+	Id            string
 	conn          net.Conn
 	Event         chan *protocol.Packet
 	ctx           context.Context
@@ -69,7 +71,7 @@ func (c *Client) Close() error {
 		c.onLeaveRoom(c.room)
 	}
 	_ = c.conn.Close()
-	return errors.New(fmt.Sprintf("Client [%d] disconnected!", c.Id))
+	return errors.New(fmt.Sprintf("Client [%s] disconnected!", c.Id))
 }
 
 // Handle PingPong
@@ -78,7 +80,7 @@ func (c *Client) PingPongHandler() {
 	for {
 		select {
 		case <-c.ctx.Done():
-			log.Printf("[%d] PingPongHandler Err: %v", c.Id, c.ctx.Err())
+			log.Printf("[%s] PingPongHandler Err: %v", c.Id, c.ctx.Err())
 			c.Close()
 			return
 		case <-pTicker.C:
@@ -103,7 +105,7 @@ func (c *Client) Listen() error {
 	go c.PingPongHandler()
 
 	defer func() {
-		log.Printf("[%d] End of events!", c.Id)
+		log.Printf("[%s] End of events!", c.Id)
 		close(c.Event)
 	}()
 
@@ -120,12 +122,12 @@ func (c *Client) Listen() error {
 		if data != nil {
 			packet, err := protocol.NewPacket(data)
 			if err != nil {
-				log.Printf("[%d] Error while creating new packet: %v", c.Id, err)
+				log.Printf("[%s] Error while creating new packet: %v", c.Id, err)
 				continue
 			}
 
 			if !packet.IsProto {
-				log.Printf("[%d] Packet type should be Protobuf", c.Id)
+				log.Printf("[%s] Packet type should be Protobuf", c.Id)
 				continue
 			}
 
@@ -133,13 +135,13 @@ func (c *Client) Listen() error {
 			case proto.EMSG_PING:
 				c.pingChan <- struct{}{}
 			case proto.EMSG_LOGON:
-				log.Printf("[%d] Authorizing...", c.Id)
+				log.Printf("[%s] Authorizing...", c.Id)
 				if !c.IsAuthenticated() {
 					if err := c.Authentication(packet); err != nil {
 						c.ctxCancel()
 						return c.Close()
 					}
-					log.Printf("[%d] Authorized!", c.Id)
+					log.Printf("[%s] Authorized!", c.Id)
 				}
 			}
 
@@ -219,10 +221,11 @@ func NewUserClient(hub Hub, conn net.Conn) (client *Client) {
 }
 
 // Create a new client
-func NewClient(hub Hub, conn net.Conn, rType RoomType) (client *Client) {
+func NewClient(hub Hub, conn net.Conn, rType RoomType) *Client {
 	mCtx, cancelFunc := context.WithCancel(hub.GetContext())
-	client = &Client{
-		Id:        uuid.New().ID(),
+	clientID := strconv.Itoa(int(uuid.New().ID()))
+	client := &Client{
+		Id:        clientID,
 		conn:      conn,
 		ctx:       mCtx,
 		ctxCancel: cancelFunc,
@@ -234,38 +237,39 @@ func NewClient(hub Hub, conn net.Conn, rType RoomType) (client *Client) {
 	client.onLeaveRoom = func(room Room) {
 		room.Leave(client)
 	}
-	return
+	return client
 }
 
-type UserWithClients struct {
-	Clients  map[uint32] *Client
+type MemberWithClients struct {
+	Clients  cmap.ConcurrentMap
 	User     *proto.User
 }
 
 // Create a new user client with its clients
-func NewUserWithClients(user *proto.User) *UserWithClients {
-	return &UserWithClients{
-		Clients: make(map[uint32] *Client, 0),
+func NewMemberWithClients(user *proto.User) *MemberWithClients {
+	return &MemberWithClients{
+		Clients: cmap.New(),
 		User: user,
 	}
 }
 
-func (uwc *UserWithClients) HasClients() bool {
+func (uwc *MemberWithClients) HasClients() bool {
 	return len(uwc.Clients) > 0
 }
 
-func (uwc *UserWithClients) GetClient(id uint32) *Client {
-	return uwc.Clients[id]
+func (uwc *MemberWithClients) GetClient(id string) *Client {
+	client, _ := uwc.Clients.Get(id)
+	return client.(*Client)
 }
 
-func (uwc *UserWithClients) GetClients() map[uint32] *Client {
+func (uwc *MemberWithClients) GetClients() cmap.ConcurrentMap {
 	return uwc.Clients
 }
 
-func (uwc *UserWithClients) AddClient(client *Client) {
-	uwc.Clients[client.Id] = client
+func (uwc *MemberWithClients) AddClient(client *Client) {
+	uwc.Clients.Set(client.Id, client)
 }
 
-func (uwc *UserWithClients) RemoveClient(client *Client) {
-	delete(uwc.Clients, client.Id)
+func (uwc *MemberWithClients) RemoveClient(client *Client) {
+	uwc.Clients.Remove(client.Id)
 }
