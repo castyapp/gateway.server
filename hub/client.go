@@ -260,7 +260,7 @@ func NewMemberWithClients(user *proto.User) *MemberWithClients {
 }
 
 func (uwc *MemberWithClients) HasClients() bool {
-	return len(uwc.Clients) > 0
+	return uwc.Clients.Count() > 0
 }
 
 func (uwc *MemberWithClients) GetClient(id string) *Client {

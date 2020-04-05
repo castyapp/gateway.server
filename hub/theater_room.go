@@ -182,24 +182,24 @@ func (room *TheaterRoom) Leave(client *Client) {
 	room.RemoveClient(client)
 
 	// get current member from client
-	member := client.GetUser()
+	mClient := client.GetUser()
 
 	// check if this member exists
-	if room.HasMember(member) {
+	if room.HasMember(mClient) {
 
 		// get member clients from room
-		memberClients := room.GetMemberFromClient(client)
+		member := room.GetMemberFromClient(client)
 
 		// check if member has clients
-		if memberClients.HasClients() {
+		if member.HasClients() {
 
 			// then removes it
-			memberClients.RemoveClient(client)
+			member.RemoveClient(client)
 
 		} else {
 
 			// remove member from room
-			room.RemoveMember(member)
+			room.RemoveMember(mClient)
 
 			// Update client to others
 			room.updateClientToFriends(client, &proto.PersonalStateMsgEvent{
