@@ -38,11 +38,6 @@ func (room *TheaterRoom) GetClients() (clients []*Client) {
 	return
 }
 
-// Get room clients
-func (room *TheaterRoom) GetContext() context.Context {
-	return room.hub.ctx
-}
-
 // Get current user's client
 func (room *TheaterRoom) AddClient(client *Client) {
 	room.clients.Set(client.Id, client)
@@ -310,8 +305,8 @@ func (room *TheaterRoom) HandleEvents(client *Client) error {
 		select {
 
 		// check if context closed
-		case <-room.GetContext().Done():
-			return room.GetContext().Err()
+		case <-client.ctx.Done():
+			return client.ctx.Err()
 
 		// on new events
 		case event := <-client.Event:
@@ -363,7 +358,8 @@ func (room *TheaterRoom) HandleEvents(client *Client) error {
 
 // create a new theater room
 func NewTheaterRoom(name string, hub *TheaterHub) (room *TheaterRoom, err error) {
-	response, err := grpc.TheaterServiceClient.GetTheater(hub.ctx, &proto.Theater{
+	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+	response, err := grpc.TheaterServiceClient.GetTheater(mCtx, &proto.Theater{
 		Id: name,
 	})
 	if err != nil {
