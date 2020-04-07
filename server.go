@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/CastyLab/gateway.server/internal"
 	"log"
 	"net"
 	"net/http"
@@ -31,8 +32,6 @@ func main() {
 
 	var (
 		router     = mux.NewRouter()
-		userhub    = hub.NewUserHub()
-		theaterhub = hub.NewTheaterHub(userhub)
 		port       = flag.Int("port", 3000, "Server port")
 		env        = flag.String("env", "development", "Environment")
 	)
@@ -43,7 +42,7 @@ func main() {
 	signal.Notify(iC, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-iC
-		userhub.Close()
+		hub.UsersHub.Close()
 		os.Exit(0)
 	}()
 
@@ -60,20 +59,22 @@ func main() {
 		router.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
 			switch request.Header.Get("Websocket-Room") {
 			case "USER-ROOM":
-				userhub.Handler(writer, request)
+				hub.UsersHub.Handler(writer, request)
 				return
 			case "THEATER-ROOM":
-				theaterhub.Handler(writer, request)
+				hub.TheatersHub.Handler(writer, request)
 				return
 			}
 		}).Methods("GET")
 	default:
 		// routes for development
-		router.HandleFunc("/user", userhub.Handler)
-		router.HandleFunc("/theater", theaterhub.Handler)
+		router.HandleFunc("/user", hub.UsersHub.Handler)
+		router.HandleFunc("/theater", hub.TheatersHub.Handler)
 	}
 
 	http.Handle("/", router)
+
+	go internal.CreateInternalRouter()
 
 	defer unixListener.Close()
 
