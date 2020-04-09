@@ -3,7 +3,7 @@ module github.com/CastyLab/gateway.server
 go 1.14
 
 require (
-	github.com/CastyLab/grpc.proto v0.0.0-20200407190546-1fbdfe097c82
+	github.com/CastyLab/grpc.proto v0.0.0-20200409181227-bc9e1467c0b9
 	github.com/MrJoshLab/go-respond v0.0.0-20191125172458-25d4d18aaa1b
 	github.com/getsentry/sentry-go v0.5.1
 	github.com/gin-gonic/gin v1.4.0
