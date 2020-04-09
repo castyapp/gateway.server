@@ -1,5 +1,7 @@
 package hub
 
+import cmap "github.com/orcaman/concurrent-map"
+
 type RoomType int
 
 const (
@@ -11,5 +13,5 @@ type Room interface {
 	Join(*Client)
 	HandleEvents(*Client) error
 	Leave(*Client)
-	GetClients() []*Client
+	GetClients() cmap.ConcurrentMap
 }

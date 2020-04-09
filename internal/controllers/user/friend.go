@@ -13,25 +13,21 @@ import (
 	"time"
 )
 
-func NewFriendRequestEvent(ctx *gin.Context) {
+func NewNotificationEvent(ctx *gin.Context) {
 
 	userId := ctx.PostForm("user_id")
 
 	userRoom, err := hub.UsersHub.FindRoom(userId)
-	if err != nil {
-		return
-	}
-
-	for _, client := range userRoom.GetClients() {
-		buffer, err := protocol.NewMsgProtobuf(proto.EMSG_NEW_NOTIFICATION, nil)
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-		if err := client.WriteMessage(buffer.Bytes()); err != nil {
-			log.Println(err)
-			continue
-		}
+	if err == nil {
+		userRoom.GetClients().IterCb(func(key string, v interface{}) {
+			client := v.(*hub.Client)
+			buffer, err := protocol.NewMsgProtobuf(proto.EMSG_NEW_NOTIFICATION, nil)
+			if err == nil {
+				_ = client.WriteMessage(buffer.Bytes())
+			}
+		})
+	} else {
+		log.Println(err)
 	}
 
 	ctx.JSON(respond.Default.InsertSucceeded())
@@ -55,24 +51,23 @@ func FriendRequestAcceptedEvent(ctx *gin.Context) {
 			return
 		}
 
-		// get friend's clients
-		for _, client := range friendRoom.GetClients() {
+		friendRoom.GetClients().IterCb(func(key string, v interface{}) {
+
+			client := v.(*hub.Client)
+			request := &proto.FriendRequestAcceptedMsgEvent{
+				Friend: user,
+			}
 
 			// Create a new Friend Request Accepted Proto Message
-			buffer, err := protocol.NewMsgProtobuf(proto.EMSG_FRIEND_REQUEST_ACCEPTED, &proto.FriendRequestAcceptedMsgEvent{
-				Friend: user,
-			})
-			if err != nil {
-				log.Println(err)
-				continue
+			buffer, err := protocol.NewMsgProtobuf(proto.EMSG_FRIEND_REQUEST_ACCEPTED, request)
+			if err == nil {
+				_ = client.WriteMessage(buffer.Bytes())
 			}
 
-			// Send message to friend's clients
-			if err := client.WriteMessage(buffer.Bytes()); err != nil {
-				log.Println(err)
-				continue
-			}
-		}
+		})
+
+	} else {
+		log.Println(err)
 	}
 
 	// Adding friend to user room
@@ -88,6 +83,8 @@ func FriendRequestAcceptedEvent(ctx *gin.Context) {
 		if err == nil && response != nil {
 			userRoom.(*hub.UserRoom).AddFriend(response.Result)
 		}
+	} else {
+		log.Println(err)
 	}
 
 	ctx.JSON(respond.Default.InsertSucceeded())

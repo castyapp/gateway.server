@@ -30,12 +30,8 @@ type TheaterRoom struct {
 }
 
 // Get room clients
-func (room *TheaterRoom) GetClients() (clients []*Client) {
-	clients = make([]*Client, 0)
-	for _, client := range room.clients.Items() {
-		clients = append(clients, client.(*Client))
-	}
-	return
+func (room *TheaterRoom) GetClients() cmap.ConcurrentMap {
+	return room.clients
 }
 
 // Get current user's client
@@ -81,7 +77,7 @@ func (room *TheaterRoom) Join(client *Client) {
 
 	if err != nil {
 		room.Err <- err
-		client.conn.Close()
+		_ = client.conn.Close()
 		return
 	}
 
@@ -106,7 +102,7 @@ func (room *TheaterRoom) Join(client *Client) {
 		room.AddMember(userWithClients)
 
 		// update this client to others in room
-		room.updateClientToFriends(client, &proto.PersonalStateMsgEvent{
+		_ = room.updateClientToFriends(client, &proto.PersonalStateMsgEvent{
 			User:  client.GetUser(),
 			State: proto.PERSONAL_STATE_ONLINE,
 		})
@@ -147,7 +143,7 @@ func (room *TheaterRoom) updateUserActivity(client *Client) {
 	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
 
 	// Update user's activity via grpc
-	grpc.UserServiceClient.UpdateActivity(mCtx, &proto.UpdateActivityRequest{
+	_, _ = grpc.UserServiceClient.UpdateActivity(mCtx, &proto.UpdateActivityRequest{
 		Activity: &proto.Activity{
 			Id:       room.theater.Id,
 			Activity: room.theater.Title,
@@ -165,7 +161,7 @@ func (room *TheaterRoom) removeUserActivity(client *Client) {
 	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
 
 	// remove activity from user
-	grpc.UserServiceClient.RemoveActivity(mCtx, &proto.AuthenticateRequest{
+	_, _ = grpc.UserServiceClient.RemoveActivity(mCtx, &proto.AuthenticateRequest{
 		Token: client.Token(),
 	})
 }
@@ -202,7 +198,7 @@ func (room *TheaterRoom) Leave(client *Client) {
 			room.RemoveMember(mClient)
 
 			// Update client to others
-			room.updateClientToFriends(client, &proto.PersonalStateMsgEvent{
+			_ = room.updateClientToFriends(client, &proto.PersonalStateMsgEvent{
 				User:  client.GetUser(),
 				State: proto.PERSONAL_STATE_OFFLINE,
 			})
@@ -230,26 +226,27 @@ func (room *TheaterRoom) SendTo(id string, msg []byte) error {
 
 /* Broadcast to every client */
 func (room *TheaterRoom) BroadcastAll(msg []byte) (err error) {
-	for _, client := range room.GetClients() {
-		err = client.WriteMessage(msg)
-	}
+	room.GetClients().IterCb(func(key string, v interface{}) {
+		err = v.(*Client).WriteMessage(msg)
+	})
 	return
 }
 
 func (room *TheaterRoom) SendAll(msg []byte) (err error) {
-	for _, client := range room.GetClients() {
-		err = client.WriteMessage(msg)
-	}
+	room.GetClients().IterCb(func(key string, v interface{}) {
+		err = v.(*Client).WriteMessage(msg)
+	})
 	return
 }
 
 /* Broadcast to all except */
 func (room *TheaterRoom) BroadcastEx(senderid string, msg []byte) (err error) {
-	for _, client := range room.GetClients() {
+	room.GetClients().IterCb(func(key string, v interface{}) {
+		client := v.(*Client)
 		if client.Id != senderid {
 			err = client.WriteMessage(msg)
 		}
-	}
+	})
 	return
 }
 
@@ -320,7 +317,7 @@ func (room *TheaterRoom) HandleEvents(client *Client) error {
 						if err := event.ReadProtoMsg(theaterVideoPlayer); err != nil {
 							room.Err <- err
 						} else {
-							room.BroadcastProtoToAllEx(client, proto.EMSG_THEATER_PLAY, theaterVideoPlayer)
+							_ = room.BroadcastProtoToAllEx(client, proto.EMSG_THEATER_PLAY, theaterVideoPlayer)
 						}
 					}
 					break
@@ -332,7 +329,7 @@ func (room *TheaterRoom) HandleEvents(client *Client) error {
 						if err := event.ReadProtoMsg(theaterVideoPlayer); err != nil {
 							room.Err <- err
 						} else {
-							room.BroadcastProtoToAllEx(client, proto.EMSG_THEATER_PAUSE, theaterVideoPlayer)
+							_ = room.BroadcastProtoToAllEx(client, proto.EMSG_THEATER_PAUSE, theaterVideoPlayer)
 						}
 					}
 					break
@@ -345,7 +342,7 @@ func (room *TheaterRoom) HandleEvents(client *Client) error {
 							room.Err <- err
 						} else {
 							chatMessage.User = client.GetUser()
-							room.sendMessageToMemebers(client, chatMessage)
+							_ = room.sendMessageToMemebers(client, chatMessage)
 						}
 					}
 					break

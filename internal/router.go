@@ -16,8 +16,8 @@ func CreateInternalRouter() {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 
-	router.POST("/user/@NewFriendRequestEvent", user.NewFriendRequestEvent)
-	router.POST("/user/@FriendRequestAcceptedEvent", user.FriendRequestAcceptedEvent)
+	router.POST("/user/@notifications/new", user.NewNotificationEvent)
+	router.POST("/user/@notifications/friend/accepted", user.FriendRequestAcceptedEvent)
 
 	router.GET("/", func(ctx *gin.Context) {
 		ctx.JSON(respond.Default.NotFound())

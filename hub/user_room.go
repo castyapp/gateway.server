@@ -30,15 +30,10 @@ func (room *UserRoom) GetContext() context.Context {
 
 func (room *UserRoom) AddFriend(friend *proto.User) {
 	room.friends.Set(friend.Id, friend)
-	return
 }
 
-func (room *UserRoom) GetClients() (clients []*Client) {
-	clients = make([]*Client, 0)
-	room.clients.IterCb(func(key string, val interface{}) {
-		clients = append(clients, val.(*Client))
-	})
-	return
+func (room *UserRoom) GetClients() cmap.ConcurrentMap {
+	return room.clients
 }
 
 func (room *UserRoom) UpdateState(client *Client, state proto.PERSONAL_STATE) {
@@ -84,9 +79,9 @@ func (room *UserRoom) Leave(client *Client) {
 }
 
 func (room *UserRoom) Send(msg []byte) (err error) {
-	for _, client := range room.GetClients() {
-		err = client.WriteMessage(msg)
-	}
+	room.clients.IterCb(func(key string, v interface{}) {
+		err = v.(*Client).WriteMessage(msg)
+	})
 	return
 }
 
@@ -127,37 +122,29 @@ func (room *UserRoom) SendMessage(message *proto.Message) error {
 
 func (room *UserRoom) updateMyActivityOnFriendsList(psme *proto.PersonalActivityMsgEvent) {
 
-	for _, item := range room.friends.Items() {
-		friend := item.(*proto.User)
+	room.friends.IterCb(func(key string, val interface{}) {
+		friend := val.(*proto.User)
 		if friendRoom, ok := room.hub.cmap.Get(friend.Id); ok {
-
 			buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PERSONAL_ACTIVITY_CHANGED, psme)
-			if err != nil {
-				log.Println(err)
-				continue
+			if err == nil {
+				_ = friendRoom.(*UserRoom).Send(buffer.Bytes())
 			}
-
-			_ = friendRoom.(*UserRoom).Send(buffer.Bytes())
 		}
-	}
+	})
 
 }
 
 func (room *UserRoom) updateMeOnFriendsList(psme *proto.PersonalStateMsgEvent) {
 
-	for _, item := range room.friends.Items() {
-		friend := item.(*proto.User)
+	room.friends.IterCb(func(key string, val interface{}) {
+		friend := val.(*proto.User)
 		if friendRoom, ok := room.hub.cmap.Get(friend.Id); ok {
-
 			buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PERSONAL_STATE_CHANGED, psme)
-			if err != nil {
-				log.Println(err)
-				continue
+			if err == nil {
+				_ = friendRoom.(*UserRoom).Send(buffer.Bytes())
 			}
-
-			_ = friendRoom.(*UserRoom).Send(buffer.Bytes())
 		}
-	}
+	})
 
 }
 
