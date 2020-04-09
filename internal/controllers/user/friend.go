@@ -82,6 +82,9 @@ func FriendRequestAcceptedEvent(ctx *gin.Context) {
 		mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
 		response, err := grpc.UserServiceClient.GetFriend(mCtx, &proto.FriendRequest{
 			FriendId: friendId,
+			AuthRequest: &proto.AuthenticateRequest{
+				Token: []byte(ctx.GetHeader("Authorization")),
+			},
 		})
 		if err == nil && response != nil {
 			userRoom.(*hub.UserRoom).AddFriend(response.Result)
