@@ -53,9 +53,6 @@ func FriendRequestAcceptedEvent(ctx *gin.Context) {
 			return
 		}
 
-		// adding current user to friend room
-		friendRoom.(*hub.UserRoom).AddFriend(user)
-
 		// get friend's clients
 		for _, client := range friendRoom.GetClients() {
 

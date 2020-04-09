@@ -19,7 +19,7 @@ type UserRoom struct {
 	name      string
 	hub       *UserHub
 	clients   cmap.ConcurrentMap
-	friends   map[string] *proto.User
+	friends   cmap.ConcurrentMap
 	client    *Client
 }
 
@@ -29,7 +29,7 @@ func (room *UserRoom) GetContext() context.Context {
 }
 
 func (room *UserRoom) AddFriend(friend *proto.User) {
-	room.friends[friend.Id] = friend
+	room.friends.Set(friend.Id, friend)
 	return
 }
 
@@ -127,10 +127,9 @@ func (room *UserRoom) SendMessage(message *proto.Message) error {
 
 func (room *UserRoom) updateMyActivityOnFriendsList(psme *proto.PersonalActivityMsgEvent) {
 
-	for _, fr := range room.friends {
-		if fc, ok := room.hub.cmap.Get(fr.Id); ok {
-
-			friendRoom := fc.(*UserRoom)
+	for _, item := range room.friends.Items() {
+		friend := item.(*proto.User)
+		if friendRoom, ok := room.hub.cmap.Get(friend.Id); ok {
 
 			buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PERSONAL_ACTIVITY_CHANGED, psme)
 			if err != nil {
@@ -138,27 +137,28 @@ func (room *UserRoom) updateMyActivityOnFriendsList(psme *proto.PersonalActivity
 				continue
 			}
 
-			_ = friendRoom.Send(buffer.Bytes())
+			_ = friendRoom.(*UserRoom).Send(buffer.Bytes())
 		}
 	}
 
 }
 
 func (room *UserRoom) updateMeOnFriendsList(psme *proto.PersonalStateMsgEvent) {
-	for _, fr := range room.friends {
-		if fc, ok := room.hub.cmap.Get(fr.Id); ok {
-			friendRoom := fc.(*UserRoom)
+
+	for _, item := range room.friends.Items() {
+		friend := item.(*proto.User)
+		if friendRoom, ok := room.hub.cmap.Get(friend.Id); ok {
+
 			buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PERSONAL_STATE_CHANGED, psme)
 			if err != nil {
 				log.Println(err)
 				continue
 			}
-			if err := friendRoom.Send(buffer.Bytes()); err != nil {
-				log.Println(err)
-				continue
-			}
+
+			_ = friendRoom.(*UserRoom).Send(buffer.Bytes())
 		}
 	}
+
 }
 
 func (room *UserRoom) GetFriendsFromGRPC() error {
@@ -170,7 +170,7 @@ func (room *UserRoom) GetFriendsFromGRPC() error {
 		return err
 	}
 	for _, friend := range response.Result {
-		room.friends[friend.Id] = friend
+		room.friends.Set(friend.Id, friend)
 	}
 	return nil
 }
@@ -188,6 +188,17 @@ func (room *UserRoom) HandleEvents(client *Client) error {
 		case event := <-client.Event:
 			if event != nil {
 				switch event.EMsg {
+
+				case proto.EMSG_FRIEND_REQUEST_ACCEPTED:
+					if client.IsAuthenticated() {
+						protoMessage := new(proto.FriendRequestAcceptedMsgEvent)
+						if err := event.ReadProtoMsg(protoMessage); err != nil {
+							log.Println(err)
+							continue
+						}
+						room.AddFriend(protoMessage.Friend)
+					}
+
 				// when user sending a new message
 				case proto.EMSG_NEW_CHAT_MESSAGE:
 					if client.IsAuthenticated() {
@@ -229,7 +240,7 @@ func NewUserRoom(name string, hub *UserHub) (room *UserRoom) {
 	return &UserRoom{
 		name:    name,
 		clients: cmap.New(),
-		friends: make(map[string] *proto.User, 0),
+		friends: cmap.New(),
 		hub:     hub,
 	}
 }
