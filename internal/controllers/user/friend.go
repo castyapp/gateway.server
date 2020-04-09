@@ -15,10 +15,12 @@ import (
 
 func NewFriendRequestEvent(ctx *gin.Context) {
 
-	var (
-		userId = ctx.PostForm("user_id")
-		userRoom = hub.UsersHub.GetOrCreateRoom(userId)
-	)
+	userId := ctx.PostForm("user_id")
+
+	userRoom, err := hub.UsersHub.FindRoom(userId)
+	if err != nil {
+		return
+	}
 
 	for _, client := range userRoom.GetClients() {
 		buffer, err := protocol.NewMsgProtobuf(proto.EMSG_NEW_NOTIFICATION, nil)
@@ -74,7 +76,7 @@ func FriendRequestAcceptedEvent(ctx *gin.Context) {
 	}
 
 	// Adding friend to user room
-	userRoom, err := hub.UsersHub.FindRoom(friendId)
+	userRoom, err := hub.UsersHub.FindRoom(user.Id)
 	if err == nil {
 		mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
 		response, err := grpc.UserServiceClient.GetFriend(mCtx, &proto.FriendRequest{
