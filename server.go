@@ -42,7 +42,7 @@ func main() {
 	signal.Notify(iC, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-iC
-		hub.UsersHub.Close()
+		_ = hub.UsersHub.Close()
 		os.Exit(0)
 	}()
 

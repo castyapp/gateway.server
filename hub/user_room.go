@@ -28,6 +28,11 @@ func (room *UserRoom) GetContext() context.Context {
 	return room.client.ctx
 }
 
+func (room *UserRoom) AddFriend(friend *proto.User) {
+	room.friends[friend.Id] = friend
+	return
+}
+
 func (room *UserRoom) GetClients() (clients []*Client) {
 	clients = make([]*Client, 0)
 	room.clients.IterCb(func(key string, val interface{}) {
@@ -42,7 +47,7 @@ func (room *UserRoom) UpdateState(client *Client, state proto.PERSONAL_STATE) {
 		User:  client.GetUser(),
 	})
 	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
-	grpc.UserServiceClient.UpdateState(mCtx, &proto.UpdateStateRequest{
+	_, _ = grpc.UserServiceClient.UpdateState(mCtx, &proto.UpdateStateRequest{
 		State: state,
 		AuthRequest: &proto.AuthenticateRequest{
 			Token: client.Token(),
