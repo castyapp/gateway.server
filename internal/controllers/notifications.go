@@ -1,4 +1,4 @@
-package user
+package controllers
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 	"github.com/CastyLab/grpc.proto/protocol"
 	"github.com/MrJoshLab/go-respond"
 	"github.com/gin-gonic/gin"
-	"log"
 	"time"
 )
 
@@ -26,8 +25,6 @@ func NewNotificationEvent(ctx *gin.Context) {
 				_ = client.WriteMessage(buffer.Bytes())
 			}
 		})
-	} else {
-		log.Println(err)
 	}
 
 	ctx.JSON(respond.Default.InsertSucceeded())
@@ -66,8 +63,6 @@ func FriendRequestAcceptedEvent(ctx *gin.Context) {
 
 		})
 
-	} else {
-		log.Println(err)
 	}
 
 	// Adding friend to user room
@@ -83,8 +78,6 @@ func FriendRequestAcceptedEvent(ctx *gin.Context) {
 		if err == nil && response != nil {
 			userRoom.(*hub.UserRoom).AddFriend(response.Result)
 		}
-	} else {
-		log.Println(err)
 	}
 
 	ctx.JSON(respond.Default.InsertSucceeded())

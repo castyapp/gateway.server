@@ -1,7 +1,7 @@
 package internal
 
 import (
-	"github.com/CastyLab/gateway.server/internal/controllers/user"
+	"github.com/CastyLab/gateway.server/internal/controllers"
 	"github.com/MrJoshLab/go-respond"
 	"github.com/gin-gonic/gin"
 	_ "github.com/joho/godotenv/autoload"
@@ -16,8 +16,8 @@ func CreateInternalRouter() {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 
-	router.POST("/user/@notifications/new", user.NewNotificationEvent)
-	router.POST("/user/@notifications/friend/accepted", user.FriendRequestAcceptedEvent)
+	router.POST("/user/@notifications/new", controllers.NewNotificationEvent)
+	router.POST("/user/@notifications/friend/accepted", controllers.FriendRequestAcceptedEvent)
 
 	router.GET("/", func(ctx *gin.Context) {
 		ctx.JSON(respond.Default.NotFound())

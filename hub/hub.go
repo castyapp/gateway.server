@@ -1,7 +1,6 @@
 package hub
 
 import (
-	"context"
 	"net/http"
 )
 
@@ -11,5 +10,4 @@ type Hub interface {
 	RemoveRoom(name string)
 	Close() error
 	Handler(w http.ResponseWriter, req *http.Request)
-	GetContext() context.Context
 }

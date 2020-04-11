@@ -14,19 +14,23 @@ import (
 
 type TheaterRoom struct {
 	// authorized theater
-	theater   *proto.Theater
+	theater  *proto.Theater
 
 	// all clients connected to this room
-	clients   cmap.ConcurrentMap
+	clients  cmap.ConcurrentMap
 
 	// members with multiple clients
-	members   cmap.ConcurrentMap
+	members  cmap.ConcurrentMap
 
 	// user hub for updating user's activities
-	hub       *TheaterHub
+	hub  *TheaterHub
 
-	// error channel
-	Err       chan error
+	// Current theater video player time
+	currentTime  time.Duration
+}
+
+func (room *TheaterRoom) GetName() string {
+	return room.theater.Title
 }
 
 // Get room clients
@@ -76,7 +80,6 @@ func (room *TheaterRoom) Join(client *Client) {
 	})
 
 	if err != nil {
-		room.Err <- err
 		_ = client.conn.Close()
 		return
 	}
@@ -95,11 +98,11 @@ func (room *TheaterRoom) Join(client *Client) {
 	} else {
 
 		// create new user with clients
-		userWithClients := NewMemberWithClients(member)
-		userWithClients.AddClient(client)
+		memberRoom := NewMemberWithClients(member)
+		memberRoom.AddClient(client)
 
 		// register user with clients to room
-		room.AddMember(userWithClients)
+		room.AddMember(memberRoom)
 
 		// update this client to others in room
 		_ = room.updateClientToFriends(client, &proto.PersonalStateMsgEvent{
@@ -110,16 +113,11 @@ func (room *TheaterRoom) Join(client *Client) {
 	}
 
 	// sending authentication succeed
-	if err := protocol.BrodcastMsgProtobuf(client.conn, proto.EMSG_AUTHORIZED, nil); err != nil {
-		room.Err <- err
-	}
+	_ = protocol.BrodcastMsgProtobuf(client.conn, proto.EMSG_AUTHORIZED, nil)
 
 	// sending members through socket
 	members := &proto.TheaterMembers{Members: room.GetMembers()}
-	if err := protocol.BrodcastMsgProtobuf(client.conn, proto.EMSG_THEATER_MEMBERS, members); err != nil {
-		room.Err <- err
-	}
-
+	_ = protocol.BrodcastMsgProtobuf(client.conn, proto.EMSG_THEATER_MEMBERS, members)
 	return
 }
 
@@ -308,42 +306,31 @@ func (room *TheaterRoom) HandleEvents(client *Client) error {
 		// on new events
 		case event := <-client.Event:
 
-			if event != nil {
+			if event != nil && client.IsAuthenticated() {
+
 				switch event.EMsg {
 				// when theater play requested
 				case proto.EMSG_THEATER_PLAY:
-					if client.IsAuthenticated() {
-						theaterVideoPlayer := new(proto.TheaterVideoPlayer)
-						if err := event.ReadProtoMsg(theaterVideoPlayer); err != nil {
-							room.Err <- err
-						} else {
-							_ = room.BroadcastProtoToAllEx(client, proto.EMSG_THEATER_PLAY, theaterVideoPlayer)
-						}
+					theaterVideoPlayer := new(proto.TheaterVideoPlayer)
+					if err := event.ReadProtoMsg(theaterVideoPlayer); err == nil {
+						_ = room.BroadcastProtoToAllEx(client, proto.EMSG_THEATER_PLAY, theaterVideoPlayer)
 					}
 					break
 
 				// when theater pause requested
 				case proto.EMSG_THEATER_PAUSE:
-					if client.IsAuthenticated() {
-						theaterVideoPlayer := new(proto.TheaterVideoPlayer)
-						if err := event.ReadProtoMsg(theaterVideoPlayer); err != nil {
-							room.Err <- err
-						} else {
-							_ = room.BroadcastProtoToAllEx(client, proto.EMSG_THEATER_PAUSE, theaterVideoPlayer)
-						}
+					theaterVideoPlayer := new(proto.TheaterVideoPlayer)
+					if err := event.ReadProtoMsg(theaterVideoPlayer); err == nil {
+						_ = room.BroadcastProtoToAllEx(client, proto.EMSG_THEATER_PAUSE, theaterVideoPlayer)
 					}
 					break
 
 				// when new message chat recieved
 				case proto.EMSG_NEW_CHAT_MESSAGE:
-					if client.IsAuthenticated() {
-						chatMessage := new(proto.ChatMsgEvent)
-						if err := event.ReadProtoMsg(chatMessage); err != nil {
-							room.Err <- err
-						} else {
-							chatMessage.User = client.GetUser()
-							_ = room.sendMessageToMemebers(client, chatMessage)
-						}
+					chatMessage := new(proto.ChatMsgEvent)
+					if err := event.ReadProtoMsg(chatMessage); err == nil {
+						chatMessage.User = client.GetUser()
+						_ = room.sendMessageToMemebers(client, chatMessage)
 					}
 					break
 				}
@@ -353,20 +340,27 @@ func (room *TheaterRoom) HandleEvents(client *Client) error {
 	}
 }
 
-// create a new theater room
-func NewTheaterRoom(name string, hub *TheaterHub) (room *TheaterRoom, err error) {
+func getTheater(id string) (*proto.Theater, error) {
 	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
 	response, err := grpc.TheaterServiceClient.GetTheater(mCtx, &proto.Theater{
-		Id: name,
+		Id: id,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return response.Result, nil
+}
+
+// create a new theater room
+func NewTheaterRoom(id string, hub *TheaterHub) (room *TheaterRoom, err error) {
+	theater, err := getTheater(id)
 	if err != nil {
 		return nil, err
 	}
 	return &TheaterRoom{
 		clients: cmap.New(),
 		members: cmap.New(),
-		theater: response.Result,
+		theater: theater,
 		hub:     hub,
-		Err:     make(chan error),
 	}, nil
 }

@@ -3,7 +3,6 @@ package hub
 import (
 	"context"
 	"errors"
-	"github.com/CastyLab/grpc.proto/protocol"
 	"log"
 	"net/http"
 	"time"
@@ -20,17 +19,6 @@ import (
 type UserHub struct {
 	upgrader websocket.Upgrader
 	cmap     cmap.ConcurrentMap
-	ctx      context.Context
-}
-
-// set userhub context
-func (hub *UserHub) WithContext(ctx context.Context) {
-	hub.ctx = ctx
-}
-
-// get userhub context
-func (hub *UserHub) GetContext() context.Context {
-	return hub.ctx
 }
 
 // find user's room
@@ -98,7 +86,6 @@ func (hub *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
 	conn, _, _, err := ws.UpgradeHTTP(req, w)
 	if err != nil {
 		sentry.CaptureException(err)
-		log.Println("upgrade:", err)
 		return
 	}
 
@@ -108,23 +95,13 @@ func (hub *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
 	log.Printf("[%s] New client connected", client.Id)
 
 	// Close connection after client disconnected
-	defer func() {
-		log.Println(client.Close())
-	}()
+	defer client.Close()
 
 	// Join user room if client recieved authorized
 	client.OnAuthorized(func(auth Auth) (room Room) {
 		room = hub.GetOrCreateRoom(auth.User().Id)
 		room.Join(client)
 		return
-	})
-
-	// Send Unauthorized message to client if client Unauthorized and close connection
-	client.OnUnauthorized(func() {
-		buffer, err := protocol.NewMsgProtobuf(proto.EMSG_UNAUTHORIZED, nil)
-		if err == nil {
-			_ = client.WriteMessage(buffer.Bytes())
-		}
 	})
 
 	// Listen on client events

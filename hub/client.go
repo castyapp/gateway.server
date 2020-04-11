@@ -81,19 +81,19 @@ func (c *Client) PingPongHandler() {
 		select {
 		case <-c.ctx.Done():
 			log.Printf("[%s] PingPongHandler Err: %v", c.Id, c.ctx.Err())
-			c.Close()
+			_ = c.Close()
 			return
 		case <-pTicker.C:
 			diff := time.Now().Sub(c.lastPingAt)
 			if diff.Round(time.Second) > time.Minute {
 				c.ctxCancel()
-				c.Close()
+				_ = c.Close()
 				return
 			}
 		case <-c.pingChan:
 			c.lastPingAt = time.Now()
 			if buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PONG, nil); err == nil {
-				c.WriteMessage(buffer.Bytes())
+				_ = c.WriteMessage(buffer.Bytes())
 			}
 		}
 	}
@@ -143,7 +143,7 @@ func (c *Client) Listen() {
 						if err := c.Authentication(packet); err != nil {
 							log.Println(err)
 							c.ctxCancel()
-							c.Close()
+							_ = c.Close()
 							return
 						}
 						log.Printf("[%s] Authorized!", c.Id)
@@ -242,6 +242,12 @@ func NewClient(ctx context.Context, conn net.Conn, rType RoomType) *Client {
 	}
 	client.onLeaveRoom = func(room Room) {
 		room.Leave(client)
+	}
+	client.onAuthFailed = func() {
+		buffer, err := protocol.NewMsgProtobuf(proto.EMSG_UNAUTHORIZED, nil)
+		if err == nil {
+			_ = client.WriteMessage(buffer.Bytes())
+		}
 	}
 	return client
 }

@@ -23,7 +23,10 @@ type UserRoom struct {
 	client    *Client
 }
 
-// Get room clients
+func (room *UserRoom) GetName() string {
+	return room.name
+}
+
 func (room *UserRoom) GetContext() context.Context {
 	return room.client.ctx
 }

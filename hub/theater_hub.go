@@ -1,10 +1,8 @@
 package hub
 
 import (
-	"context"
 	"errors"
 	"github.com/CastyLab/grpc.proto/proto"
-	"github.com/CastyLab/grpc.proto/protocol"
 	"github.com/getsentry/sentry-go"
 	"github.com/gobwas/ws"
 	"github.com/gorilla/websocket"
@@ -15,18 +13,9 @@ import (
 
 /* Controls a bunch of rooms */
 type TheaterHub struct {
-	ctx      context.Context
 	upgrader websocket.Upgrader
 	userHub  *UserHub
 	cmap     cmap.ConcurrentMap
-}
-
-func (hub *TheaterHub) WithContext(ctx context.Context) {
-	hub.ctx = ctx
-}
-
-func (hub *TheaterHub) GetContext() context.Context {
-	return hub.ctx
 }
 
 func (hub *TheaterHub) FindRoom(name string) (room Room, err error) {
@@ -73,7 +62,6 @@ func (hub *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 	conn, _, _, err := ws.UpgradeHTTP(req, w)
 	if err != nil {
 		sentry.CaptureException(err)
-		log.Println("upgrade:", err)
 		return
 	}
 
@@ -91,14 +79,6 @@ func (hub *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 		room = hub.GetOrCreateRoom(string(event.Room))
 		room.Join(client)
 		return
-	})
-
-	// Send Unauthorized message to client if client Unauthorized and close connection
-	client.OnUnauthorized(func() {
-		buffer, err := protocol.NewMsgProtobuf(proto.EMSG_UNAUTHORIZED, nil)
-		if err == nil {
-			_ = client.WriteMessage(buffer.Bytes())
-		}
 	})
 
 	// Listen on client events
