@@ -80,7 +80,7 @@ func (c *Client) PingPongHandler() {
 	for {
 		select {
 		case <-c.ctx.Done():
-			log.Printf("[%s] PingPongHandler Err: %v", c.Id, c.ctx.Err())
+			log.Printf("[%s] Ping Pong Handler Err: %v", c.Id, c.ctx.Err())
 			_ = c.Close()
 			return
 		case <-pTicker.C:
@@ -113,12 +113,12 @@ func (c *Client) Listen() {
 	for {
 		select {
 		case <-c.ctx.Done():
+			log.Println(c.ctx.Err())
 			return
 		default:
 
 			data, err := wsutil.ReadClientBinary(c.conn)
 			if err != nil {
-				log.Println(err)
 				return
 			}
 
@@ -138,7 +138,6 @@ func (c *Client) Listen() {
 				case proto.EMSG_PING:
 					c.pingChan <- struct{}{}
 				case proto.EMSG_LOGON:
-					log.Printf("[%s] Authorizing...", c.Id)
 					if !c.IsAuthenticated() {
 						if err := c.Authentication(packet); err != nil {
 							log.Println(err)
@@ -146,7 +145,6 @@ func (c *Client) Listen() {
 							_ = c.Close()
 							return
 						}
-						log.Printf("[%s] Authorized!", c.Id)
 					}
 				}
 
@@ -203,6 +201,9 @@ func (c *Client) Authentication(packet *protocol.Packet) error {
 				err:           nil,
 			}
 			c.room = c.onAuthSuccess(c.auth)
+			if c.room == nil {
+				return errors.New("could not find theater room")
+			}
 			go c.room.HandleEvents(c)
 		}
 

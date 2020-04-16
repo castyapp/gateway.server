@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/CastyLab/grpc.proto/protocol"
 	cmap "github.com/orcaman/concurrent-map"
+	"log"
 	"time"
 
 	"github.com/CastyLab/gateway.server/grpc"
@@ -26,7 +27,7 @@ type TheaterRoom struct {
 	hub  *TheaterHub
 
 	// Current theater video player time
-	currentTime  time.Duration
+	currentTime  float32
 }
 
 func (room *TheaterRoom) GetName() string {
@@ -214,12 +215,8 @@ func (room *TheaterRoom) Leave(client *Client) {
 }
 
 /* Send to specific client */
-func (room *TheaterRoom) SendTo(id string, msg []byte) error {
-	client, ok := room.clients.Get(id)
-	if !ok {
-		return errors.New("could not find client")
-	}
-	return client.(*Client).WriteMessage(msg)
+func (room *TheaterRoom) SendTo(client *Client, msg []byte) error {
+	return client.WriteMessage(msg)
 }
 
 /* Broadcast to every client */
@@ -293,6 +290,27 @@ func (room *TheaterRoom) updateMyActivity(client *Client, msg *proto.PersonalAct
 	return nil
 }
 
+func (room *TheaterRoom) Sync(client *Client) {
+
+	log.Printf("[%s] Syncing client...", client.Id)
+
+	body := &proto.TheaterVideoPlayer{
+		TheaterId: room.theater.Id,
+		CurrentTime: room.currentTime,
+	}
+
+	buffer, err := protocol.NewMsgProtobuf(proto.EMSG_SYNCED, body)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	if err := room.SendTo(client, buffer.Bytes()); err != nil {
+		log.Println(err)
+	}
+
+}
+
 // Handle client events
 func (room *TheaterRoom) HandleEvents(client *Client) error {
 
@@ -308,7 +326,14 @@ func (room *TheaterRoom) HandleEvents(client *Client) error {
 
 			if event != nil && client.IsAuthenticated() {
 
+				log.Printf("NEW EVENT: [%s]", event.EMsg)
+
 				switch event.EMsg {
+
+				// syncing client to theater video player
+				case proto.EMSG_SYNC_ME:
+					room.Sync(client)
+
 				// when theater play requested
 				case proto.EMSG_THEATER_PLAY:
 					theaterVideoPlayer := new(proto.TheaterVideoPlayer)
@@ -340,23 +365,22 @@ func (room *TheaterRoom) HandleEvents(client *Client) error {
 	}
 }
 
-func getTheater(id string) (*proto.Theater, error) {
+func GetTheater(id []byte) (*proto.Theater, error) {
 	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
 	response, err := grpc.TheaterServiceClient.GetTheater(mCtx, &proto.Theater{
-		Id: id,
+		Id: string(id),
 	})
 	if err != nil {
 		return nil, err
+	}
+	if response.Result == nil {
+		return nil, errors.New("could not find theater")
 	}
 	return response.Result, nil
 }
 
 // create a new theater room
-func NewTheaterRoom(id string, hub *TheaterHub) (room *TheaterRoom, err error) {
-	theater, err := getTheater(id)
-	if err != nil {
-		return nil, err
-	}
+func NewTheaterRoom(theater *proto.Theater, hub *TheaterHub) (room *TheaterRoom, err error) {
 	return &TheaterRoom{
 		clients: cmap.New(),
 		members: cmap.New(),

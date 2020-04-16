@@ -26,12 +26,12 @@ func (hub *TheaterHub) FindRoom(name string) (room Room, err error) {
 }
 
 /* If room doesn't exist creates it then returns it */
-func (hub *TheaterHub) GetOrCreateRoom(name string) (room Room) {
-	if r, ok := hub.cmap.Get(name); ok {
+func (hub *TheaterHub) GetOrCreateRoom(theater *proto.Theater) (room Room) {
+	if r, ok := hub.cmap.Get(theater.Id); ok {
 		return r.(*TheaterRoom)
 	}
-	room, _ = NewTheaterRoom(name, hub)
-	hub.cmap.Set(name, room)
+	room, _ = NewTheaterRoom(theater, hub)
+	hub.cmap.Set(theater.Id, room)
 	return
 }
 
@@ -47,7 +47,9 @@ func (hub *TheaterHub) GetRoom(name string) (*TheaterRoom, error) {
 }
 
 func (hub *TheaterHub) RemoveRoom(name string) {
-	hub.cmap.Remove(name)
+	if hub.cmap.Has(name) {
+		hub.cmap.Remove(name)
+	}
 	return
 }
 
@@ -76,7 +78,16 @@ func (hub *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 	// Join user room if client recieved authorized
 	client.OnAuthorized(func(auth Auth) (room Room) {
 		event := auth.Event().(*proto.TheaterLogOnEvent)
-		room = hub.GetOrCreateRoom(string(event.Room))
+
+		// getting theater from grpc service
+		theater, err := GetTheater(event.Room)
+		if err != nil {
+			client.ctxCancel()
+			_ = client.Close()
+			return
+		}
+
+		room = hub.GetOrCreateRoom(theater)
 		room.Join(client)
 		return
 	})
