@@ -3,16 +3,15 @@ package hub
 import (
 	"context"
 	"errors"
-	"log"
-	"net/http"
-	"time"
-
 	"github.com/CastyLab/gateway.server/grpc"
 	"github.com/CastyLab/grpc.proto/proto"
 	"github.com/getsentry/sentry-go"
 	"github.com/gobwas/ws"
 	"github.com/gorilla/websocket"
 	cmap "github.com/orcaman/concurrent-map"
+	"log"
+	"net/http"
+	"time"
 )
 
 /* Controls a bunch of rooms */
@@ -49,24 +48,14 @@ func (hub *UserHub) RollbackUsersStatesToOffline() {
 
 	log.Println("\r- Rollback all online users to OFFLINE state!")
 
-	// Get user ids connected to server
-	usersIds := make([]string, 0)
-	for uId := range hub.cmap.Items() {
-		usersIds = append(usersIds, uId)
+	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+	response, err := grpc.UserServiceClient.RollbackStates(mCtx, &proto.RollbackStatesRequest{})
+	if err != nil {
+		sentry.CaptureException(err)
+		log.Println(err)
 	}
-
-	if len(usersIds) > 0 {
-		mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
-		response, err := grpc.UserServiceClient.RollbackStates(mCtx, &proto.RollbackStatesRequest{
-			UsersIds: usersIds,
-		})
-		if err != nil {
-			sentry.CaptureException(err)
-			log.Println(err)
-		}
-		if response.Code == http.StatusOK {
-			log.Println("\r- Rolled back online users state to Offline successfully!")
-		}
+	if response.Code == http.StatusOK {
+		log.Println("\r- Rolled back online users state to Offline successfully!")
 	}
 }
 
