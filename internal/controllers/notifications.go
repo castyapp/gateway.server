@@ -48,6 +48,9 @@ func FriendRequestAcceptedEvent(ctx *gin.Context) {
 			return
 		}
 
+		// adding user to friend room
+		friendRoom.(*hub.UserRoom).AddFriend(user)
+
 		friendRoom.GetClients().IterCb(func(key string, v interface{}) {
 
 			client := v.(*hub.Client)
