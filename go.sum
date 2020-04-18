@@ -23,6 +23,8 @@ github.com/CastyLab/grpc.proto v0.0.0-20200409181227-bc9e1467c0b9 h1:uXHef5tHrfC
 github.com/CastyLab/grpc.proto v0.0.0-20200409181227-bc9e1467c0b9/go.mod h1:ndIYs0TPPBQGGUV3gZbjO6UafoncyF0qfhzKHuQ+euc=
 github.com/CastyLab/grpc.proto v0.0.0-20200413213713-3896c61b1bd3 h1:M89tAx42Ax2Dk9dUf4oMHLYxCunvXB3rRcfHXJ42P60=
 github.com/CastyLab/grpc.proto v0.0.0-20200413213713-3896c61b1bd3/go.mod h1:ndIYs0TPPBQGGUV3gZbjO6UafoncyF0qfhzKHuQ+euc=
+github.com/CastyLab/grpc.proto v0.0.0-20200418124000-3bdcf0b804e4 h1:ga6oRk+FpEyCmaNfowo+GeiWJEbtj4BMjd+T9eLuUrs=
+github.com/CastyLab/grpc.proto v0.0.0-20200418124000-3bdcf0b804e4/go.mod h1:ndIYs0TPPBQGGUV3gZbjO6UafoncyF0qfhzKHuQ+euc=
 github.com/CloudyKit/fastprinter v0.0.0-20170127035650-74b38d55f37a/go.mod h1:EFZQ978U7x8IRnstaskI3IysnWY5Ao3QgZUKOXlsAdw=
 github.com/CloudyKit/jet v2.1.3-0.20180809161101-62edd43e4f88+incompatible/go.mod h1:HPYO+50pSWkPoj9Q/eq0aRGByCL6ScRlUmiEX5Zgm+w=
 github.com/Joker/hpp v1.0.0/go.mod h1:8x5n+M1Hp5hC0g8okX3sR3vFQwynaX/UgSOM9MeBKzY=
