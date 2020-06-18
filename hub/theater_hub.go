@@ -11,15 +11,15 @@ import (
 	"net/http"
 )
 
-/* Controls a bunch of rooms */
+// TheaterHub holds theater rooms
 type TheaterHub struct {
 	upgrader websocket.Upgrader
 	userHub  *UserHub
-	cmap     cmap.ConcurrentMap
+	cmap.ConcurrentMap
 }
 
 func (hub *TheaterHub) FindRoom(name string) (room Room, err error) {
-	if r, ok := hub.cmap.Get(name); ok {
+	if r, ok := hub.Get(name); ok {
 		return r.(*TheaterRoom), nil
 	}
 	return nil, errors.New("theater room is missing from cmp")
@@ -27,28 +27,28 @@ func (hub *TheaterHub) FindRoom(name string) (room Room, err error) {
 
 /* If room doesn't exist creates it then returns it */
 func (hub *TheaterHub) GetOrCreateRoom(theater *proto.Theater) (room Room) {
-	if r, ok := hub.cmap.Get(theater.Id); ok {
+	if r, ok := hub.Get(theater.Id); ok {
 		return r.(*TheaterRoom)
 	}
 	room, _ = NewTheaterRoom(theater, hub)
-	hub.cmap.Set(theater.Id, room)
+	hub.Set(theater.Id, room)
 	return
 }
 
 /* If room doesn't exist creates it then returns it */
 func (hub *TheaterHub) GetRoom(name string) (*TheaterRoom, error) {
-	if !hub.cmap.Has(name) {
+	if !hub.Has(name) {
 		return nil, errors.New("room not found")
 	}
-	if r, ok := hub.cmap.Get(name); ok {
+	if r, ok := hub.Get(name); ok {
 		return r.(*TheaterRoom), nil
 	}
 	return nil, errors.New("room is missing from cmp")
 }
 
 func (hub *TheaterHub) RemoveRoom(name string) {
-	if hub.cmap.Has(name) {
-		hub.cmap.Remove(name)
+	if hub.Has(name) {
+		hub.Remove(name)
 	}
 	return
 }
@@ -100,8 +100,8 @@ func (hub *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 /* Constructor */
 func NewTheaterHub(uhub *UserHub) *TheaterHub {
 	return &TheaterHub{
-		upgrader: newUpgrader(),
-		userHub:  uhub,
-		cmap:     cmap.New(),
+		upgrader:       newUpgrader(),
+		userHub:        uhub,
+		ConcurrentMap:  cmap.New(),
 	}
 }

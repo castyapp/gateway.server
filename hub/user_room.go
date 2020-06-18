@@ -90,7 +90,7 @@ func (room *UserRoom) Send(msg []byte) (err error) {
 
 func (room *UserRoom) SendMessage(message *proto.Message) error {
 
-	if fc, ok := room.hub.cmap.Get(message.Reciever.Id); ok {
+	if fc, ok := room.hub.Get(message.Reciever.Id); ok {
 
 		log.Println(fc.(*UserRoom).clients.Count())
 		log.Println("Found user's room", fc.(*UserRoom).name)
@@ -127,7 +127,7 @@ func (room *UserRoom) updateMyActivityOnFriendsList(psme *proto.PersonalActivity
 
 	room.friends.IterCb(func(key string, val interface{}) {
 		friend := val.(*proto.User)
-		if friendRoom, ok := room.hub.cmap.Get(friend.Id); ok {
+		if friendRoom, ok := room.hub.Get(friend.Id); ok {
 			buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PERSONAL_ACTIVITY_CHANGED, psme)
 			if err == nil {
 				_ = friendRoom.(*UserRoom).Send(buffer.Bytes())
@@ -141,7 +141,7 @@ func (room *UserRoom) updateMeOnFriendsList(psme *proto.PersonalStateMsgEvent) {
 
 	room.friends.IterCb(func(key string, val interface{}) {
 		friend := val.(*proto.User)
-		if friendRoom, ok := room.hub.cmap.Get(friend.Id); ok {
+		if friendRoom, ok := room.hub.Get(friend.Id); ok {
 			buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PERSONAL_STATE_CHANGED, psme)
 			if err == nil {
 				_ = friendRoom.(*UserRoom).Send(buffer.Bytes())

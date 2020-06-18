@@ -17,12 +17,12 @@ import (
 /* Controls a bunch of rooms */
 type UserHub struct {
 	upgrader websocket.Upgrader
-	cmap     cmap.ConcurrentMap
+	cmap.ConcurrentMap
 }
 
 // find user's room
 func (hub *UserHub) FindRoom(name string) (room Room, err error) {
-	if r, ok := hub.cmap.Get(name); ok {
+	if r, ok := hub.Get(name); ok {
 		return r.(*UserRoom), nil
 	}
 	return nil, errors.New("user room is missing from cmp")
@@ -30,17 +30,17 @@ func (hub *UserHub) FindRoom(name string) (room Room, err error) {
 
 // Create or get user's room
 func (hub *UserHub) GetOrCreateRoom(name string) (room Room) {
-	if r, ok := hub.cmap.Get(name); ok {
+	if r, ok := hub.Get(name); ok {
 		return r.(*UserRoom)
 	}
 	room = NewUserRoom(name, hub)
-	hub.cmap.SetIfAbsent(name, room)
+	hub.SetIfAbsent(name, room)
 	return
 }
 
 // remove user's room from concurrent map
 func (hub *UserHub) RemoveRoom(name string) {
-	hub.cmap.Remove(name)
+	hub.Remove(name)
 	return
 }
 
@@ -86,7 +86,7 @@ func (hub *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
 	// Close connection after client disconnected
 	defer client.Close()
 
-	// Join user room if client recieved authorized
+	// Join user room if client received authorized
 	client.OnAuthorized(func(auth Auth) (room Room) {
 		room = hub.GetOrCreateRoom(auth.User().Id)
 		room.Join(client)
@@ -100,7 +100,7 @@ func (hub *UserHub) Handler(w http.ResponseWriter, req *http.Request) {
 // Create a new userhub
 func NewUserHub() *UserHub {
 	return &UserHub{
-		cmap:     cmap.New(),
-		upgrader: newUpgrader(),
+		ConcurrentMap: cmap.New(),
+		upgrader:      newUpgrader(),
 	}
 }

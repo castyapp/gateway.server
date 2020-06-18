@@ -74,10 +74,10 @@ func main() {
 
 	http.Handle("/", router)
 
-	go internal.CreateInternalRouter()
+	go internal.NewInternalRouter()
 
 	defer unixListener.Close()
 
-	log.Printf("%s server running and listeting on :%d", *env, *port)
+	log.Printf("%s server running and listeting on http://0.0.0.0:%d", *env, *port)
 	log.Printf("http_err: %v", http.Serve(unixListener, nil))
 }

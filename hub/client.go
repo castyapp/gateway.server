@@ -113,7 +113,7 @@ func (c *Client) Listen() {
 	for {
 		select {
 		case <-c.ctx.Done():
-			log.Println(c.ctx.Err())
+			// end of connection
 			return
 		default:
 
@@ -266,23 +266,23 @@ func NewMemberWithClients(user *proto.User) *MemberWithClients {
 	}
 }
 
-func (uwc *MemberWithClients) HasClients() bool {
-	return uwc.Clients.Count() > 0
+func (mc *MemberWithClients) HasClients() bool {
+	return mc.Clients.Count() > 0
 }
 
-func (uwc *MemberWithClients) GetClient(id string) *Client {
-	client, _ := uwc.Clients.Get(id)
+func (mc *MemberWithClients) GetClient(id string) *Client {
+	client, _ := mc.Clients.Get(id)
 	return client.(*Client)
 }
 
-func (uwc *MemberWithClients) GetClients() cmap.ConcurrentMap {
-	return uwc.Clients
+func (mc *MemberWithClients) GetClients() cmap.ConcurrentMap {
+	return mc.Clients
 }
 
-func (uwc *MemberWithClients) AddClient(client *Client) {
-	uwc.Clients.Set(client.Id, client)
+func (mc *MemberWithClients) AddClient(client *Client) {
+	mc.Clients.Set(client.Id, client)
 }
 
-func (uwc *MemberWithClients) RemoveClient(client *Client) {
-	uwc.Clients.Remove(client.Id)
+func (mc *MemberWithClients) RemoveClient(client *Client) {
+	mc.Clients.Remove(client.Id)
 }

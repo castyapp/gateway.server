@@ -4,3 +4,4 @@
 Caddyfile
 /client
 *.sock
+docker-compose.yml

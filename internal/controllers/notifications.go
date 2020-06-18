@@ -18,8 +18,8 @@ func NewNotificationEvent(ctx *gin.Context) {
 
 	userRoom, err := hub.UsersHub.FindRoom(userId)
 	if err == nil {
-		userRoom.GetClients().IterCb(func(key string, v interface{}) {
-			client := v.(*hub.Client)
+		userRoom.GetClients().IterCb(func(_ string, uc interface{}) {
+			client := uc.(*hub.Client)
 			buffer, err := protocol.NewMsgProtobuf(proto.EMSG_NEW_NOTIFICATION, nil)
 			if err == nil {
 				_ = client.WriteMessage(buffer.Bytes())
@@ -51,7 +51,7 @@ func FriendRequestAcceptedEvent(ctx *gin.Context) {
 		// adding user to friend room
 		friendRoom.(*hub.UserRoom).AddFriend(user)
 
-		friendRoom.GetClients().IterCb(func(key string, v interface{}) {
+		friendRoom.GetClients().IterCb(func(_ string, v interface{}) {
 
 			client := v.(*hub.Client)
 			request := &proto.FriendRequestAcceptedMsgEvent{
