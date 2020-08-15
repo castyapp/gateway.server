@@ -8,6 +8,7 @@ import (
 type Auth struct {
 	err           error
 	authenticated bool
+	guest         bool
 	token         []byte
 	event         pb.Message
 	user          *proto.User

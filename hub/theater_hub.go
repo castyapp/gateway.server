@@ -13,8 +13,9 @@ import (
 
 // TheaterHub holds theater rooms
 type TheaterHub struct {
-	upgrader websocket.Upgrader
-	userHub  *UserHub
+	upgrader     websocket.Upgrader
+	userHub      *UserHub
+	VideoPlayers cmap.ConcurrentMap
 	cmap.ConcurrentMap
 }
 
@@ -77,10 +78,21 @@ func (hub *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 
 	// Join user room if client recieved authorized
 	client.OnAuthorized(func(auth Auth) (room Room) {
-		event := auth.Event().(*proto.TheaterLogOnEvent)
 
-		// getting theater from grpc service
-		theater, err := GetTheater(event.Room)
+		var (
+			err     error
+			theater = new(proto.Theater)
+			event   = auth.Event().(*proto.TheaterLogOnEvent)
+		)
+
+		if auth.guest {
+			// getting theater from grpc service
+			theater, err = GetTheater(event.Room)
+		} else {
+			// getting theater from grpc service
+			theater, err = GetTheaterWithAuthToken(event.Room, event.Token)
+		}
+
 		if err != nil {
 			client.ctxCancel()
 			_ = client.Close()
@@ -102,6 +114,7 @@ func NewTheaterHub(uhub *UserHub) *TheaterHub {
 	return &TheaterHub{
 		upgrader:       newUpgrader(),
 		userHub:        uhub,
+		VideoPlayers:   cmap.New(),
 		ConcurrentMap:  cmap.New(),
 	}
 }

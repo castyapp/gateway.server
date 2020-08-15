@@ -4,7 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"github.com/CastyLab/gateway.server/redis"
 	"github.com/CastyLab/grpc.proto/protocol"
+	"github.com/getsentry/sentry-go"
+	redis2 "github.com/go-redis/redis/v8"
 	"github.com/golang/protobuf/ptypes"
 	cmap "github.com/orcaman/concurrent-map"
 	"log"
@@ -20,114 +24,137 @@ type UserRoom struct {
 	hub       *UserHub
 	clients   cmap.ConcurrentMap
 	friends   cmap.ConcurrentMap
-	client    *Client
+	session   *Session
 }
 
-func (room *UserRoom) GetName() string {
-	return room.name
+func (r *UserRoom) GetName() string {
+	return r.name
 }
 
-func (room *UserRoom) GetContext() context.Context {
-	return room.client.ctx
+func (r *UserRoom) GetContext() context.Context {
+	return r.session.c.ctx
 }
 
-func (room *UserRoom) AddFriend(friend *proto.User) {
-	room.friends.Set(friend.Id, friend)
+func (r *UserRoom) AddFriend(friend *proto.User) {
+	r.friends.Set(friend.Id, friend)
 }
 
-func (room *UserRoom) GetClients() cmap.ConcurrentMap {
-	return room.clients
+func (r *UserRoom) GetClients() cmap.ConcurrentMap {
+	return r.clients
 }
 
-func (room *UserRoom) UpdateState(client *Client, state proto.PERSONAL_STATE) {
-	room.updateMeOnFriendsList(&proto.PersonalStateMsgEvent{
+func (r *UserRoom) UpdateState(client *Client, state proto.PERSONAL_STATE) {
+
+	r.updateMeOnFriendsList(&proto.PersonalStateMsgEvent{
 		State: state,
 		User:  client.GetUser(),
 	})
-	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
-	_, _ = grpc.UserServiceClient.UpdateState(mCtx, &proto.UpdateStateRequest{
-		State: state,
-		AuthRequest: &proto.AuthenticateRequest{
-			Token: client.Token(),
-		},
-	})
+
+	mCtx, cancel := context.WithTimeout(client.ctx, time.Second * 10)
+	defer cancel()
+
+	hKey := fmt.Sprintf("user:%s", client.GetUser().Id)
+
+	switch state {
+	case proto.PERSONAL_STATE_ONLINE:
+		cmd := redis.Client.HSet(mCtx, hKey, "state", state.String())
+		if err := cmd.Err(); err != nil {
+			sentry.CaptureException(err)
+		}
+	case proto.PERSONAL_STATE_OFFLINE:
+		cmd := redis.Client.HDel(mCtx, hKey, "state")
+		if err := cmd.Err(); err != nil {
+			sentry.CaptureException(err)
+		}
+	}
+
 }
 
 /* Add a conn to clients map so that it can be managed */
-func (room *UserRoom) Join(client *Client) {
+func (r *UserRoom) Join(client *Client) {
 
-	room.clients.SetIfAbsent(client.Id, client)
-	room.client = client
+	r.clients.SetIfAbsent(client.Id, client)
+	r.session = NewSession(client)
 
-	if err := room.GetFriendsFromGRPC(); err != nil {
-		log.Println(err)
+	if err := r.GetAndFeatchFriendsState(client.ctx); err != nil {
+		sentry.CaptureException(fmt.Errorf("could not GetAndFeatchFriendsState : %v", err))
 	}
 
-	if room.clients.Count() == 1 {
-		room.UpdateState(client, proto.PERSONAL_STATE_ONLINE)
+	if r.clients.Count() == 1 {
+		r.UpdateState(client, proto.PERSONAL_STATE_ONLINE)
 	}
 
 	if err := protocol.BrodcastMsgProtobuf(client.conn, proto.EMSG_AUTHORIZED, nil); err != nil {
 		log.Println(err)
+		sentry.CaptureException(fmt.Errorf("could not send Authorized message to user: %v", err))
 	}
 }
 
 /* Removes client from room */
-func (room *UserRoom) Leave(client *Client) {
-	room.clients.Remove(client.Id)
-	if room.clients.Count() <= 1 {
-		room.UpdateState(client, proto.PERSONAL_STATE_OFFLINE)
-		room.hub.RemoveRoom(room.name)
+func (r *UserRoom) Leave(client *Client) {
+	r.clients.Remove(client.Id)
+	if r.clients.Count() == 0 {
+		r.UpdateState(client, proto.PERSONAL_STATE_OFFLINE)
+		r.hub.RemoveRoom(r.name)
 	}
 }
 
-func (room *UserRoom) Send(msg []byte) (err error) {
-	room.clients.IterCb(func(key string, v interface{}) {
+func (r *UserRoom) Send(msg []byte) (err error) {
+	r.clients.IterCb(func(key string, v interface{}) {
 		err = v.(*Client).WriteMessage(msg)
 	})
 	return
 }
 
-func (room *UserRoom) SendMessage(message *proto.Message) error {
-
-	if fc, ok := room.hub.Get(message.Reciever.Id); ok {
-
-		log.Println(fc.(*UserRoom).clients.Count())
-		log.Println("Found user's room", fc.(*UserRoom).name)
-
-		from, err := json.Marshal(message.Sender)
-		if err != nil {
-			return err
-		}
-
-		createdAt, _ := ptypes.TimestampProto(time.Now())
-
-		entry := &proto.ChatMsgEvent{
-			Message:   []byte(message.Content),
-			From:      string(from),
-			CreatedAt: createdAt,
-		}
-
-		buffer, err := protocol.NewMsgProtobuf(proto.EMSG_CHAT_MESSAGES, entry)
-		if err != nil {
-			return err
-		}
-
-		if err := fc.(*UserRoom).Send(buffer.Bytes()); err != nil {
-			return err
-		}
-
-		return nil
+func (r *UserRoom) SendProtoMessage(enum proto.EMSG, message *proto.Message) (err error) {
+	buffer, err := protocol.NewMsgProtobuf(enum, message)
+	if err != nil {
+		return err
 	}
-
-	return errors.New("could not find friend's room")
+	if err := r.Send(buffer.Bytes()); err != nil {
+		sentry.CaptureException(fmt.Errorf("could not send proto message : %v", err))
+		return err
+	}
+	return nil
 }
 
-func (room *UserRoom) updateMyActivityOnFriendsList(psme *proto.PersonalActivityMsgEvent) {
+func (r *UserRoom) SendMessage(message *proto.Message) error {
 
-	room.friends.IterCb(func(key string, val interface{}) {
+	room, err := r.hub.FindRoom(message.Reciever.Id)
+	if err != nil {
+		return errors.New("could not find friend's room")
+	}
+
+	from, err := json.Marshal(message.Sender)
+	if err != nil {
+		return err
+	}
+
+	createdAt, _ := ptypes.TimestampProto(time.Now())
+
+	entry := &proto.ChatMsgEvent{
+		Message:   []byte(message.Content),
+		From:      string(from),
+		CreatedAt: createdAt,
+	}
+
+	buffer, err := protocol.NewMsgProtobuf(proto.EMSG_CHAT_MESSAGES, entry)
+	if err != nil {
+		return err
+	}
+
+	if err := room.(*UserRoom).Send(buffer.Bytes()); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *UserRoom) updateMyActivityOnFriendsList(psme *proto.PersonalActivityMsgEvent) {
+
+	r.friends.IterCb(func(key string, val interface{}) {
 		friend := val.(*proto.User)
-		if friendRoom, ok := room.hub.Get(friend.Id); ok {
+		if friendRoom, err := r.hub.FindRoom(friend.Id); err == nil {
 			buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PERSONAL_ACTIVITY_CHANGED, psme)
 			if err == nil {
 				_ = friendRoom.(*UserRoom).Send(buffer.Bytes())
@@ -137,42 +164,93 @@ func (room *UserRoom) updateMyActivityOnFriendsList(psme *proto.PersonalActivity
 
 }
 
-func (room *UserRoom) updateMeOnFriendsList(psme *proto.PersonalStateMsgEvent) {
-
-	room.friends.IterCb(func(key string, val interface{}) {
+func (r *UserRoom) updateMeOnFriendsList(psme *proto.PersonalStateMsgEvent) {
+	r.friends.IterCb(func(key string, val interface{}) {
 		friend := val.(*proto.User)
-		if friendRoom, ok := room.hub.Get(friend.Id); ok {
+		friendRoom, err := r.hub.FindRoom(friend.Id)
+		if err == nil {
 			buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PERSONAL_STATE_CHANGED, psme)
 			if err == nil {
-				_ = friendRoom.(*UserRoom).Send(buffer.Bytes())
+				if err = friendRoom.(*UserRoom).Send(buffer.Bytes()); err != nil {
+					sentry.CaptureException(fmt.Errorf("could not send user's state to friends: %v", err))
+				}
 			}
 		}
 	})
-
 }
 
-func (room *UserRoom) GetFriendsFromGRPC() error {
+func (r *UserRoom) FeatchFriends() error {
 	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
 	response, err := grpc.UserServiceClient.GetFriends(mCtx, &proto.AuthenticateRequest{
-		Token: room.client.Token(),
+		Token: r.session.Token(),
 	})
 	if err != nil {
 		return err
 	}
 	for _, friend := range response.Result {
-		room.friends.Set(friend.Id, friend)
+		r.friends.Set(friend.Id, friend)
 	}
 	return nil
 }
 
+func (r *UserRoom) GetAndFeatchFriendsState(ctx context.Context) error {
+	if err := r.FeatchFriends(); err != nil {
+		return err
+	}
+	r.friends.IterCb(func(key string, v interface{}) {
+		friend, ok := v.(*proto.User)
+		if ok {
+			cmd := redis.Client.HGet(ctx, fmt.Sprintf("user:%s", friend.Id), "state")
+			if err := cmd.Err(); err != nil {
+				sentry.CaptureException(fmt.Errorf("could not get friend from redis: %v", err))
+				return
+			}
+			activityCmd := redis.Client.HGet(ctx, fmt.Sprintf("user:%s", friend.Id), "activity")
+			if err := activityCmd.Err(); err != nil {
+				if err != redis2.Nil {
+					log.Println(err)
+					sentry.CaptureException(fmt.Errorf("could not get friend's activuty from redis: %v", err))
+					return
+				}
+			}
+			if sState := cmd.Val(); sState != proto.PERSONAL_STATE_OFFLINE.String() {
+				var (
+					activity = new(proto.Activity)
+					state    = proto.PERSONAL_STATE(proto.PERSONAL_STATE_value[sState])
+					psm      = &proto.PersonalStateMsgEvent{
+						User: friend,
+						State: state,
+					}
+				)
+
+				redisActivity := activityCmd.Val()
+				if redisActivity != "" {
+					err := json.Unmarshal([]byte(redisActivity), activity)
+					if err == nil {
+						psm.Activity = activity
+					}
+				}
+
+				buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PERSONAL_STATE_CHANGED, psm)
+				if err == nil {
+					if err := r.Send(buffer.Bytes()); err != nil {
+						sentry.CaptureException(fmt.Errorf("could not send friend's psm to user! : %v", err))
+					}
+				}
+			}
+		}
+	})
+	return nil
+}
+
 /* Handle messages */
-func (room *UserRoom) HandleEvents(client *Client) error {
+func (r *UserRoom) HandleEvents(client *Client) error {
 	for {
 		select {
 
 		// check if context closed
-		case <-room.GetContext().Done():
-			return room.GetContext().Err()
+		case <-r.GetContext().Done():
+			return r.GetContext().Err()
 
 		// on new events
 		case event := <-client.Event:
@@ -186,7 +264,7 @@ func (room *UserRoom) HandleEvents(client *Client) error {
 							log.Println(err)
 							continue
 						}
-						room.AddFriend(protoMessage.Friend)
+						r.AddFriend(protoMessage.Friend)
 					}
 
 				// when user sending a new message
@@ -198,6 +276,8 @@ func (room *UserRoom) HandleEvents(client *Client) error {
 							log.Println(err)
 							continue
 						}
+
+						chatMessage.CreatedAt = ptypes.TimestampNow()
 
 						mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
 						response, err := grpc.MessagesServiceClient.CreateMessage(mCtx, &proto.CreateMessageRequest{
@@ -213,7 +293,7 @@ func (room *UserRoom) HandleEvents(client *Client) error {
 							continue
 						}
 
-						if err = room.SendMessage(response.Result); err != nil {
+						if err = r.SendMessage(response.Result); err != nil {
 							log.Println(err)
 							continue
 						}

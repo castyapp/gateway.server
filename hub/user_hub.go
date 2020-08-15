@@ -1,17 +1,13 @@
 package hub
 
 import (
-	"context"
 	"errors"
-	"github.com/CastyLab/gateway.server/grpc"
-	"github.com/CastyLab/grpc.proto/proto"
 	"github.com/getsentry/sentry-go"
 	"github.com/gobwas/ws"
 	"github.com/gorilla/websocket"
 	cmap "github.com/orcaman/concurrent-map"
 	"log"
 	"net/http"
-	"time"
 )
 
 /* Controls a bunch of rooms */
@@ -44,27 +40,8 @@ func (hub *UserHub) RemoveRoom(name string) {
 	return
 }
 
-func (hub *UserHub) RollbackUsersStatesToOffline() {
-
-	log.Println("\r- Rollback all online users to OFFLINE state!")
-
-	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
-	response, err := grpc.UserServiceClient.RollbackStates(mCtx, &proto.RollbackStatesRequest{})
-	if err != nil {
-		sentry.CaptureException(err)
-		log.Println(err)
-	}
-	if response.Code == http.StatusOK {
-		log.Println("\r- Rolled back online users state to Offline successfully!")
-	}
-}
-
 // Close user hub
 func (hub *UserHub) Close() error {
-
-	// roll back all users back to OFFLINE state if user hub closed
-	hub.RollbackUsersStatesToOffline()
-
 	return nil
 }
 

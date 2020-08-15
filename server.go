@@ -3,19 +3,16 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/CastyLab/gateway.server/hub"
 	"github.com/CastyLab/gateway.server/internal"
+	"github.com/getsentry/sentry-go"
+	"github.com/gorilla/mux"
+	_ "github.com/joho/godotenv/autoload"
 	"log"
 	"net"
 	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
-
-	"github.com/CastyLab/gateway.server/hub"
-	"github.com/getsentry/sentry-go"
-	"github.com/gorilla/mux"
-	_ "github.com/joho/godotenv/autoload"
 )
 
 func main() {
@@ -26,10 +23,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Since sentry emits events in the background we need to make sure
-	// they are sent before we shut down
-	defer sentry.Flush(time.Second * 5)
-
 	var (
 		router     = mux.NewRouter()
 		port       = flag.Int("port", 3000, "Server port")
@@ -38,20 +31,37 @@ func main() {
 
 	flag.Parse()
 
-	iC := make(chan os.Signal, 2)
-	signal.Notify(iC, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-iC
-		_ = hub.UsersHub.Close()
-		os.Exit(0)
-	}()
-
 	unixListener, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
 		sentry.CaptureException(err)
 		log.Fatal(err)
 		return
 	}
+
+	defer func() {
+
+		// Close userhub
+		if err := hub.UsersHub.Close(); err != nil {
+			mErr := fmt.Errorf("could not close UserHub: %v", err)
+			sentry.CaptureException(mErr)
+			log.Println(mErr)
+		}
+
+		// Close unix listener
+		if err := unixListener.Close(); err != nil {
+			mErr := fmt.Errorf("could not close UnixListener: %v", err)
+			sentry.CaptureException(mErr)
+			log.Println(mErr)
+		}
+
+		// Since sentry emits events in the background we need to make sure
+		// they are sent before we shut down
+		if ok := sentry.Flush(time.Second * 5); !ok {
+			sentry.CaptureMessage("could not Flush sentry")
+			log.Println("could not Flush sentry")
+		}
+
+	}()
 
 	switch *env {
 	case "production":
@@ -75,8 +85,6 @@ func main() {
 	http.Handle("/", router)
 
 	go internal.NewInternalRouter()
-
-	defer unixListener.Close()
 
 	log.Printf("%s server running and listeting on http://0.0.0.0:%d", *env, *port)
 	log.Printf("http_err: %v", http.Serve(unixListener, nil))

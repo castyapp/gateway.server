@@ -26,13 +26,18 @@ type Client struct {
 	ctx           context.Context
 	ctxCancel     context.CancelFunc
 	onAuthSuccess func(auth Auth) Room
+	onGuess       func(auth Auth) Room
 	onAuthFailed  func()
 	onLeaveRoom   func(room Room)
 	auth          Auth
 	room          Room
 	roomType      RoomType
 	pingChan      chan struct{}
-	lastPingAt    time.Time
+}
+
+// Get client authenticated user
+func (c *Client) IsGuest() bool {
+	return c.auth.guest
 }
 
 // Get client authenticated user
@@ -48,6 +53,11 @@ func (c *Client) Token() []byte {
 // Set a callback when client authorized
 func (c *Client) OnAuthorized(callback func(auth Auth) Room) {
 	c.onAuthSuccess = callback
+}
+
+// Set a callback when client authorized
+func (c *Client) OnGuest(callback func(auth Auth) Room) {
+	c.onGuess = callback
 }
 
 // Set a callback when client unauthorized
@@ -76,22 +86,13 @@ func (c *Client) Close() error {
 
 // Handle PingPong
 func (c *Client) PingPongHandler() {
-	pTicker := time.NewTicker(time.Second)
 	for {
 		select {
 		case <-c.ctx.Done():
 			log.Printf("[%s] Ping Pong Handler Err: %v", c.Id, c.ctx.Err())
 			_ = c.Close()
 			return
-		case <-pTicker.C:
-			diff := time.Now().Sub(c.lastPingAt)
-			if diff.Round(time.Second) > time.Minute {
-				c.ctxCancel()
-				_ = c.Close()
-				return
-			}
 		case <-c.pingChan:
-			c.lastPingAt = time.Now()
 			if buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PONG, nil); err == nil {
 				_ = c.WriteMessage(buffer.Bytes())
 			}
@@ -108,7 +109,6 @@ func (c *Client) Listen() {
 	}()
 
 	go c.PingPongHandler()
-	c.pingChan <- struct{}{}
 
 	for {
 		select {
@@ -138,13 +138,11 @@ func (c *Client) Listen() {
 				case proto.EMSG_PING:
 					c.pingChan <- struct{}{}
 				case proto.EMSG_LOGON:
-					if !c.IsAuthenticated() {
-						if err := c.Authentication(packet); err != nil {
-							log.Println(err)
-							c.ctxCancel()
-							_ = c.Close()
-							return
-						}
+					if err := c.authenticate(packet); err != nil {
+						log.Println(err)
+						c.ctxCancel()
+						_ = c.Close()
+						return
 					}
 				}
 
@@ -166,21 +164,46 @@ func getTokenFromLogOnEvent(event pb.Message) []byte {
 	return nil
 }
 
+func (c *Client) send(eMsg proto.EMSG, body pb.Message) (err error) {
+	return protocol.BrodcastMsgProtobuf(c.conn, eMsg, body)
+}
+
 // Authenticate client with LogOn event
-func (c *Client) Authentication(packet *protocol.Packet) error {
+func (c *Client) authenticate(packet *protocol.Packet) error {
 
 	var event pb.Message
+
 	switch c.roomType {
 	case UserRoomType:
 		event = new(proto.LogOnEvent)
 	case TheaterRoomType:
 		event = new(proto.TheaterLogOnEvent)
 	}
+
 	if err := packet.ReadProtoMsg(event); err != nil {
 		return err
 	}
 
 	token := getTokenFromLogOnEvent(event)
+	if token == nil {
+
+		c.auth = Auth{
+			user:          new(proto.User),
+			authenticated: false,
+			guest:         true,
+			event:         event,
+			err:           nil,
+		}
+
+		c.room = c.onAuthSuccess(c.auth)
+		if c.room == nil {
+			return errors.New("could not find theater room")
+		}
+
+		go c.room.HandleEvents(c)
+
+		return nil
+	}
 
 	if !c.IsAuthenticated() {
 
@@ -208,6 +231,7 @@ func (c *Client) Authentication(packet *protocol.Packet) error {
 		}
 
 	}
+
 	return nil
 }
 

@@ -11,8 +11,8 @@ const (
 
 type Room interface {
 	GetName() string
-	Join(*Client)
-	HandleEvents(*Client) error
-	Leave(*Client)
+	Join(c *Client)
+	HandleEvents(c *Client) error
+	Leave(c *Client)
 	GetClients() cmap.ConcurrentMap
 }

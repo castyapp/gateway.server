@@ -2,8 +2,12 @@ package hub
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"github.com/CastyLab/gateway.server/redis"
 	"github.com/CastyLab/grpc.proto/protocol"
+	"github.com/getsentry/sentry-go"
 	cmap "github.com/orcaman/concurrent-map"
 	"log"
 	"time"
@@ -15,23 +19,23 @@ import (
 
 type TheaterRoom struct {
 	// authorized theater
-	theater  *proto.Theater
+	theater *proto.Theater
 
 	// all clients connected to this room
-	clients  cmap.ConcurrentMap
+	clients cmap.ConcurrentMap
 
 	// members with multiple clients
-	members  cmap.ConcurrentMap
+	members cmap.ConcurrentMap
 
 	// user hub for updating user's activities
-	hub  *TheaterHub
+	hub *TheaterHub
 
-	// Current theater video player time
-	currentTime  float32
+	// Video player configures
+	vp *VideoPlayer
 }
 
 func (room *TheaterRoom) GetName() string {
-	return room.theater.Title
+	return room.theater.MediaSource.Title
 }
 
 // Get room clients
@@ -74,51 +78,61 @@ func (room *TheaterRoom) Join(client *Client) {
 	// add the client to all room's clients
 	room.AddClient(client)
 
-	// Get current client's user object
-	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
-	response, err := grpc.UserServiceClient.GetUser(mCtx, &proto.AuthenticateRequest{
-		Token: client.Token(),
-	})
+	if !client.IsGuest() {
 
-	if err != nil {
-		_ = client.conn.Close()
-		return
-	}
-
-	member := response.Result
-
-	// Update user's activity to this theater
-	// r.updateUserActivity(client)
-
-	// Check if this room already has this member
-	if room.HasMember(member) {
-
-		// Add this client to existed member
-		room.GetMember(member).AddClient(client)
-
-	} else {
-
-		// create new user with clients
-		memberRoom := NewMemberWithClients(member)
-		memberRoom.AddClient(client)
-
-		// register user with clients to room
-		room.AddMember(memberRoom)
-
-		// update this client to others in room
-		_ = room.updateClientToFriends(client, &proto.PersonalStateMsgEvent{
-			User:  client.GetUser(),
-			State: proto.PERSONAL_STATE_ONLINE,
+		// Get current client's user object
+		mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+		response, err := grpc.UserServiceClient.GetUser(mCtx, &proto.AuthenticateRequest{
+			Token: client.Token(),
 		})
 
+		if err != nil {
+			_ = client.conn.Close()
+			return
+		}
+
+		member := response.Result
+
+		// Update user's activity to this theater
+		_ = room.updateUserActivity(client)
+
+		// Check if this room already has this member
+		if room.HasMember(member) {
+
+			// Add this client to existed member
+			room.GetMember(member).AddClient(client)
+
+		} else {
+
+			// create new user with clients
+			memberRoom := NewMemberWithClients(member)
+			memberRoom.AddClient(client)
+
+			// register user with clients to room
+			room.AddMember(memberRoom)
+
+			// update this client to others in room
+			_ = room.updateClientToFriends(client, &proto.PersonalStateMsgEvent{
+				User:  client.GetUser(),
+				State: proto.PERSONAL_STATE_ONLINE,
+			})
+
+		}
+
 	}
 
-	// sending authentication succeed
-	_ = protocol.BrodcastMsgProtobuf(client.conn, proto.EMSG_AUTHORIZED, nil)
+	if client.IsGuest() {
+		log.Printf("User [GUEST:%s] Theater[%s]", client.Id, room.theater.Id)
+	} else {
+		log.Printf("User [%s] Theater[%s]", client.GetUser().Id, room.theater.Id)
+	}
 
-	// sending members through socket
-	members := &proto.TheaterMembers{Members: room.GetMembers()}
-	_ = protocol.BrodcastMsgProtobuf(client.conn, proto.EMSG_THEATER_MEMBERS, members)
+	_ = client.send(proto.EMSG_AUTHORIZED, nil)
+
+	_ = client.send(proto.EMSG_THEATER_MEMBERS, &proto.TheaterMembers{
+		Members: room.GetMembers(),
+	})
+
 	return
 }
 
@@ -136,33 +150,72 @@ func (room *TheaterRoom) GetMembers() (members []*proto.User) {
 }
 
 // updae user's activity to watching this theater
-func (room *TheaterRoom) updateUserActivity(client *Client) {
+func (room *TheaterRoom) updateUserActivity(client *Client) error {
 
-	// context with 10 seconds timeout
-	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+	mCtx, cancel := context.WithTimeout(client.ctx, time.Second * 10)
+	defer cancel()
 
-	// Update user's activity via grpc
-	_, _ = grpc.UserServiceClient.UpdateActivity(mCtx, &proto.UpdateActivityRequest{
+	hKey := fmt.Sprintf("user:%s", client.GetUser().Id)
+
+	activity := &proto.Activity{
+		Id:       room.theater.Id,
+		Activity: room.theater.MediaSource.Title,
+	}
+
+	activityJson, err := json.Marshal(activity)
+	if err != nil {
+		sentry.CaptureException(fmt.Errorf("could not marshal user's activity to json: %v", err))
+		return err
+	}
+
+	cmd := redis.Client.HSet(mCtx, hKey, "activity", string(activityJson))
+	if err := cmd.Err(); err != nil {
+		sentry.CaptureException(fmt.Errorf("could not update user's activity: %v", err))
+		return err
+	}
+
+	pa := &proto.PersonalActivityMsgEvent{
+		User:  client.GetUser(),
 		Activity: &proto.Activity{
 			Id:       room.theater.Id,
-			Activity: room.theater.Title,
+			Activity: room.theater.MediaSource.Title,
 		},
-		AuthRequest: &proto.AuthenticateRequest{
-			Token: client.Token(),
-		},
-	})
+	}
+
+	// update this client to others in room
+	if err := room.updateMyActivity(client, pa); err != nil {
+		sentry.CaptureException(fmt.Errorf("could not send user's activity to friends: %v", err))
+		return err
+	}
+
+	return nil
 }
 
 // Remove user's activity
-func (room *TheaterRoom) removeUserActivity(client *Client) {
+func (room *TheaterRoom) removeUserActivity(client *Client) error {
 
-	// context with 10 seconds timeout
-	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+	mCtx, cancel := context.WithTimeout(client.ctx, time.Second * 10)
+	defer cancel()
 
-	// remove activity from user
-	_, _ = grpc.UserServiceClient.RemoveActivity(mCtx, &proto.AuthenticateRequest{
-		Token: client.Token(),
-	})
+	hKey := fmt.Sprintf("user:%s", client.GetUser().Id)
+
+	cmd := redis.Client.HDel(mCtx, hKey, "activity")
+	if err := cmd.Err(); err != nil {
+		sentry.CaptureException(fmt.Errorf("could not update user's activity: %v", err))
+		return err
+	}
+
+	pa := &proto.PersonalActivityMsgEvent{
+		User:  client.GetUser(),
+	}
+
+	// update this client to others in room
+	if err := room.updateMyActivity(client, pa); err != nil {
+		sentry.CaptureException(fmt.Errorf("could not send user's activity to friends: %v", err))
+		return err
+	}
+
+	return nil
 }
 
 // removing client from room
@@ -176,42 +229,45 @@ func (room *TheaterRoom) Leave(client *Client) {
 	// remove current clinet from all clients
 	room.RemoveClient(client)
 
-	// get current member from client
-	mClient := client.GetUser()
+	if !client.IsGuest() {
+		// get current member from client
+		mClient := client.GetUser()
 
-	// check if this member exists
-	if room.HasMember(mClient) {
+		// check if this member exists
+		if room.HasMember(mClient) {
 
-		// get member clients from room
-		member := room.GetMemberFromClient(client)
+			// get member clients from room
+			member := room.GetMemberFromClient(client)
 
-		// check if member has clients
-		if member.HasClients() {
+			// check if member has clients
+			if member.HasClients() {
 
-			// then removes it
-			member.RemoveClient(client)
+				// then removes it
+				member.RemoveClient(client)
 
-		} else {
+			} else {
 
-			// remove member from room
-			room.RemoveMember(mClient)
+				// remove member from room
+				room.RemoveMember(mClient)
 
-			// Update client to others
-			_ = room.updateClientToFriends(client, &proto.PersonalStateMsgEvent{
-				User:  client.GetUser(),
-				State: proto.PERSONAL_STATE_OFFLINE,
-			})
+				// Update client to others
+				_ = room.updateClientToFriends(client, &proto.PersonalStateMsgEvent{
+					User:  client.GetUser(),
+					State: proto.PERSONAL_STATE_OFFLINE,
+				})
+			}
+
 		}
 
+		// Remove user's activity
+		_ = room.removeUserActivity(client)
 	}
-
-	// Remove user's activity
-	//room.removeUserActivity(client)
 
 	// check if room clients are empty then removing room from cmp
 	if room.clients.Count() == 0 {
-		room.hub.RemoveRoom(room.theater.Id)
+		room.vp.Pause()
 	}
+
 }
 
 /* Send to specific client */
@@ -258,18 +314,6 @@ func (room *TheaterRoom) updateClientToFriends(client *Client, msg *proto.Person
 	if err != nil {
 		return err
 	}
-	pmae := &proto.PersonalActivityMsgEvent{
-		User: client.GetUser(),
-	}
-	if msg.State == proto.PERSONAL_STATE_ONLINE {
-		if room.theater != nil {
-			pmae.Activity = &proto.Activity{
-				Id:       room.theater.Id,
-				Activity: room.theater.Title,
-			}
-		}
-	}
-	//_ = r.updateMyActivity(client, pmae)
 	return room.BroadcastEx(client.Id, buffer.Bytes())
 }
 
@@ -294,20 +338,24 @@ func (room *TheaterRoom) Sync(client *Client) {
 
 	log.Printf("[%s] Syncing client...", client.Id)
 
-	body := &proto.TheaterVideoPlayer{
-		TheaterId: room.theater.Id,
-		CurrentTime: room.currentTime,
+	var state proto.TheaterVideoPlayer_State
+
+	log.Println("InProgress: ", room.vp.InProgress())
+
+	if room.vp.InProgress() {
+		state = proto.TheaterVideoPlayer_PLAYING
+	} else {
+		state = proto.TheaterVideoPlayer_PAUSED
 	}
 
-	buffer, err := protocol.NewMsgProtobuf(proto.EMSG_SYNCED, body)
-	if err != nil {
-		log.Println(err)
-		return
+	tvp := &proto.TheaterVideoPlayer{
+		CurrentTime: room.vp.CurrentTime(),
+		State: state,
 	}
 
-	if err := room.SendTo(client, buffer.Bytes()); err != nil {
-		log.Println(err)
-	}
+	log.Println("TVP: ", tvp)
+
+	_ = client.send(proto.EMSG_SYNCED, tvp)
 
 }
 
@@ -324,7 +372,7 @@ func (room *TheaterRoom) HandleEvents(client *Client) error {
 		// on new events
 		case event := <-client.Event:
 
-			if event != nil && client.IsAuthenticated() {
+			if event != nil {
 
 				log.Printf("NEW EVENT: [%s]", event.EMsg)
 
@@ -336,26 +384,46 @@ func (room *TheaterRoom) HandleEvents(client *Client) error {
 
 				// when theater play requested
 				case proto.EMSG_THEATER_PLAY:
-					theaterVideoPlayer := new(proto.TheaterVideoPlayer)
-					if err := event.ReadProtoMsg(theaterVideoPlayer); err == nil {
-						_ = room.BroadcastProtoToAllEx(client, proto.EMSG_THEATER_PLAY, theaterVideoPlayer)
+					if client.IsAuthenticated() {
+						theaterVideoPlayer := new(proto.TheaterVideoPlayer)
+						if err := event.ReadProtoMsg(theaterVideoPlayer); err == nil {
+
+							room.vp.SetCurrentTime(theaterVideoPlayer.CurrentTime)
+
+							log.Println("CurrentTime: ", room.vp.CurrentTime())
+
+							log.Println("PLAY: ", theaterVideoPlayer)
+							room.vp.Play()
+
+							_ = room.BroadcastProtoToAllEx(client, proto.EMSG_THEATER_PLAY, theaterVideoPlayer)
+						}
 					}
 					break
 
 				// when theater pause requested
 				case proto.EMSG_THEATER_PAUSE:
-					theaterVideoPlayer := new(proto.TheaterVideoPlayer)
-					if err := event.ReadProtoMsg(theaterVideoPlayer); err == nil {
-						_ = room.BroadcastProtoToAllEx(client, proto.EMSG_THEATER_PAUSE, theaterVideoPlayer)
+					if client.IsAuthenticated() {
+						theaterVideoPlayer := new(proto.TheaterVideoPlayer)
+						if err := event.ReadProtoMsg(theaterVideoPlayer); err == nil {
+
+							room.vp.SetCurrentTime(theaterVideoPlayer.CurrentTime)
+
+							log.Println("PAUSE: ", theaterVideoPlayer)
+							room.vp.Pause()
+
+							_ = room.BroadcastProtoToAllEx(client, proto.EMSG_THEATER_PAUSE, theaterVideoPlayer)
+						}
 					}
 					break
 
 				// when new message chat recieved
 				case proto.EMSG_NEW_CHAT_MESSAGE:
-					chatMessage := new(proto.ChatMsgEvent)
-					if err := event.ReadProtoMsg(chatMessage); err == nil {
-						chatMessage.User = client.GetUser()
-						_ = room.sendMessageToMemebers(client, chatMessage)
+					if client.IsAuthenticated() {
+						chatMessage := new(proto.ChatMsgEvent)
+						if err := event.ReadProtoMsg(chatMessage); err == nil {
+							chatMessage.User = client.GetUser()
+							_ = room.sendMessageToMemebers(client, chatMessage)
+						}
 					}
 					break
 				}
@@ -365,10 +433,27 @@ func (room *TheaterRoom) HandleEvents(client *Client) error {
 	}
 }
 
-func GetTheater(id []byte) (*proto.Theater, error) {
+func GetTheater(theaterId []byte) (*proto.Theater, error) {
 	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
-	response, err := grpc.TheaterServiceClient.GetTheater(mCtx, &proto.Theater{
-		Id: string(id),
+	response, err := grpc.TheaterServiceClient.GetTheater(mCtx, &proto.GetTheaterRequest{
+		TheaterId: string(theaterId),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if response.Result == nil {
+		return nil, errors.New("could not find theater")
+	}
+	return response.Result, nil
+}
+
+func GetTheaterWithAuthToken(theaterId []byte, token []byte) (*proto.Theater, error) {
+	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+	response, err := grpc.TheaterServiceClient.GetTheater(mCtx, &proto.GetTheaterRequest{
+		TheaterId: string(theaterId),
+		AuthRequest: &proto.AuthenticateRequest{
+			Token: token,
+		},
 	})
 	if err != nil {
 		return nil, err
@@ -386,5 +471,6 @@ func NewTheaterRoom(theater *proto.Theater, hub *TheaterHub) (room *TheaterRoom,
 		members: cmap.New(),
 		theater: theater,
 		hub:     hub,
+		vp:      NewVideoPlayer(),
 	}, nil
 }

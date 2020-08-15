@@ -1,11 +1,14 @@
 package internal
 
 import (
-	"github.com/CastyLab/gateway.server/internal/controllers"
+	"flag"
+	"github.com/CastyLab/gateway.server/internal/controllers/theater"
+	"github.com/CastyLab/gateway.server/internal/controllers/user"
 	"github.com/MrJoshLab/go-respond"
 	"github.com/gin-gonic/gin"
 	_ "github.com/joho/godotenv/autoload"
 	"log"
+	"os"
 )
 
 func NewInternalRouter() {
@@ -14,18 +17,21 @@ func NewInternalRouter() {
 
 	var (
 		// Internal websocket router
-		listenPort = "7190"
+		unixFile = *flag.String("internal-ws-unixfile", os.Getenv("INTERNAL_UNIX_FILE"), "Internal websocket unixfile")
 		router = gin.New()
 	)
 
-	router.POST("/user/@notifications/new", controllers.NewNotificationEvent)
-	router.POST("/user/@notifications/friend/accepted", controllers.FriendRequestAcceptedEvent)
+	flag.Parse()
+
+	router.POST("/user/@notifications/new", user.NewNotificationEvent)
+	router.POST("/user/@notifications/friend/accepted", user.FriendRequestAcceptedEvent)
+	router.POST("/theater/@updated", theater.UpdatedTheater)
 
 	router.GET("/", func(ctx *gin.Context) {
 		ctx.JSON(respond.Default.NotFound())
 		return
 	})
 
-	log.Printf("Internal router running and listeting on http://0.0.0.0:%s", listenPort)
-	log.Printf("http_err: %v", router.Run("0.0.0.0:" + listenPort))
+	log.Printf("Internal router running and listeting on UnixFile:%s", unixFile)
+	log.Printf("http_err: %v", router.RunUnix(unixFile))
 }
