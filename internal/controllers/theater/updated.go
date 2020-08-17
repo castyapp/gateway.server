@@ -5,6 +5,7 @@ import (
 	"github.com/CastyLab/grpc.proto/proto"
 	"github.com/CastyLab/grpc.proto/protocol"
 	"github.com/MrJoshLab/go-respond"
+	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 )
 
@@ -23,6 +24,8 @@ func UpdatedTheater(ctx *gin.Context)  {
 
 		ctx.JSON(respond.Default.InsertSucceeded())
 		return
+	} else {
+		sentry.CaptureException(err)
 	}
 
 	ctx.JSON(respond.Default.InsertFailed())

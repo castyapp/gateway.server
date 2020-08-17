@@ -8,6 +8,7 @@ import (
 	"github.com/CastyLab/grpc.proto/proto"
 	"github.com/CastyLab/grpc.proto/protocol"
 	"github.com/MrJoshLab/go-respond"
+	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"time"
 )
@@ -25,6 +26,8 @@ func NewNotificationEvent(ctx *gin.Context) {
 				_ = client.WriteMessage(buffer.Bytes())
 			}
 		})
+	} else {
+		sentry.CaptureException(err)
 	}
 
 	ctx.JSON(respond.Default.InsertSucceeded())
