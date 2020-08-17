@@ -90,6 +90,43 @@ func (r *UserRoom) Join(client *Client) {
 	}
 }
 
+func (r *UserRoom) UpdateUserEvent(token string) error {
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20 * time.Second)
+	defer cancel()
+
+	response, err := grpc.UserServiceClient.GetUser(ctx, &proto.AuthenticateRequest{
+		Token: []byte(token),
+	})
+	if err != nil {
+		return err
+	}
+
+	// sending updated user to user's clients
+	r.GetClients().IterCb(func(_ string, uc interface{}) {
+		client := uc.(*Client)
+		buffer, err := protocol.NewMsgProtobuf(proto.EMSG_USER_UPDATED, response.Result)
+		if err == nil {
+			_ = client.WriteMessage(buffer.Bytes())
+		}
+	})
+
+	// sending updated user to friends clients
+	r.friends.IterCb(func(key string, val interface{}) {
+		friend := val.(*proto.User)
+		friendRoom, err := r.hub.FindRoom(friend.Id)
+		if err == nil {
+			buffer, err := protocol.NewMsgProtobuf(proto.EMSG_USER_UPDATED, response.Result)
+			if err == nil {
+				if err = friendRoom.(*UserRoom).Send(buffer.Bytes()); err != nil {
+					sentry.CaptureException(fmt.Errorf("could not send updated user to friends: %v", err))
+				}
+			}
+		}
+	})
+	return nil
+}
+
 /* Removes client from room */
 func (r *UserRoom) Leave(client *Client) {
 	r.clients.Remove(client.Id)

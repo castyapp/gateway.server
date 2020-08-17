@@ -183,40 +183,43 @@ func (room *TheaterRoom) GetMembers() (members []*proto.User) {
 // updae user's activity to watching this theater
 func (room *TheaterRoom) updateUserActivity(client *Client) error {
 
-	mCtx, cancel := context.WithTimeout(client.ctx, time.Second * 10)
-	defer cancel()
+	if room.theater.MediaSource != nil {
 
-	hKey := fmt.Sprintf("user:%s", client.GetUser().Id)
+		mCtx, cancel := context.WithTimeout(client.ctx, time.Second * 10)
+		defer cancel()
 
-	activity := &proto.Activity{
-		Id:       room.theater.Id,
-		Activity: room.theater.MediaSource.Title,
-	}
+		hKey := fmt.Sprintf("user:%s", client.GetUser().Id)
 
-	activityJson, err := json.Marshal(activity)
-	if err != nil {
-		sentry.CaptureException(fmt.Errorf("could not marshal user's activity to json: %v", err))
-		return err
-	}
-
-	cmd := redis.Client.HSet(mCtx, hKey, "activity", string(activityJson))
-	if err := cmd.Err(); err != nil {
-		sentry.CaptureException(fmt.Errorf("could not update user's activity: %v", err))
-		return err
-	}
-
-	pa := &proto.PersonalActivityMsgEvent{
-		User:  client.GetUser(),
-		Activity: &proto.Activity{
+		activity := &proto.Activity{
 			Id:       room.theater.Id,
 			Activity: room.theater.MediaSource.Title,
-		},
-	}
+		}
 
-	// update this client to others in room
-	if err := room.updateMyActivity(client, pa); err != nil {
-		sentry.CaptureException(fmt.Errorf("could not send user's activity to friends: %v", err))
-		return err
+		activityJson, err := json.Marshal(activity)
+		if err != nil {
+			sentry.CaptureException(fmt.Errorf("could not marshal user's activity to json: %v", err))
+			return err
+		}
+
+		cmd := redis.Client.HSet(mCtx, hKey, "activity", string(activityJson))
+		if err := cmd.Err(); err != nil {
+			sentry.CaptureException(fmt.Errorf("could not update user's activity: %v", err))
+			return err
+		}
+
+		pa := &proto.PersonalActivityMsgEvent{
+			User:  client.GetUser(),
+			Activity: &proto.Activity{
+				Id:       room.theater.Id,
+				Activity: room.theater.MediaSource.Title,
+			},
+		}
+
+		// update this client to others in room
+		if err := room.updateMyActivity(client, pa); err != nil {
+			sentry.CaptureException(fmt.Errorf("could not send user's activity to friends: %v", err))
+			return err
+		}
 	}
 
 	return nil

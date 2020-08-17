@@ -23,6 +23,7 @@ func NewInternalRouter() {
 
 	flag.Parse()
 
+	router.POST("/user/@updated", user.UpdatedUserEvent)
 	router.POST("/user/@notifications/new", user.NewNotificationEvent)
 	router.POST("/user/@notifications/friend/accepted", user.FriendRequestAcceptedEvent)
 	router.POST("/theater/@updated", theater.UpdatedTheater)
