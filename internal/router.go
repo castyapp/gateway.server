@@ -26,6 +26,7 @@ func NewInternalRouter() {
 	router.POST("/user/@notifications/new", user.NewNotificationEvent)
 	router.POST("/user/@notifications/friend/accepted", user.FriendRequestAcceptedEvent)
 	router.POST("/theater/@updated", theater.UpdatedTheater)
+	router.POST("/media_source/@updated", theater.UpdateMediaSource)
 
 	router.GET("/", func(ctx *gin.Context) {
 		ctx.JSON(respond.Default.NotFound())
