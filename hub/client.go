@@ -191,6 +191,7 @@ func (c *Client) authenticate(packet *protocol.Packet) error {
 			user:          new(proto.User),
 			authenticated: false,
 			guest:         true,
+			token:         nil,
 			event:         event,
 			err:           nil,
 		}

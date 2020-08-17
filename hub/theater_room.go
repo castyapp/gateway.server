@@ -94,7 +94,9 @@ func (room *TheaterRoom) Join(client *Client) {
 		member := response.Result
 
 		// Update user's activity to this theater
-		_ = room.updateUserActivity(client)
+		if err := room.updateUserActivity(client); err != nil {
+			sentry.CaptureException(err)
+		}
 
 		// Check if this room already has this member
 		if room.HasMember(member) {
@@ -138,24 +140,13 @@ func (room *TheaterRoom) Join(client *Client) {
 
 func (room *TheaterRoom) UpdateMediaSource(mediaSourceId, token string) error {
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20 * time.Second)
-	defer cancel()
-
-	response, err := grpc.TheaterServiceClient.GetMediaSource(ctx, &proto.MediaSourceAuthRequest{
-		AuthRequest: &proto.AuthenticateRequest{
-			Token: []byte(token),
-		},
-		Media: &proto.MediaSource{
-			Id: mediaSourceId,
-		},
-	})
+	theater, err := GetTheater([]byte(room.theater.Id), []byte(token))
 	if err != nil {
-		return fmt.Errorf("could not get media source :%v", err)
+		sentry.CaptureException(fmt.Errorf("could not get theater :%v", err))
 	}
 
-	if len(response.Result) != 0 {
-		room.theater.MediaSource = response.Result[0]
-	}
+	room.theater = theater
+	room.vp.End()
 
 	event := &proto.MediaSourceChangedEvent{
 		TheaterId: room.theater.Id,
@@ -168,7 +159,11 @@ func (room *TheaterRoom) UpdateMediaSource(mediaSourceId, token string) error {
 		if err == nil {
 			_ = client.WriteMessage(buffer.Bytes())
 		}
+		if err := room.updateUserActivity(client); err != nil {
+			sentry.CaptureException(err)
+		}
 	})
+
 	return nil
 }
 
@@ -469,28 +464,17 @@ func (room *TheaterRoom) HandleEvents(client *Client) error {
 	}
 }
 
-func GetTheater(theaterId []byte) (*proto.Theater, error) {
-	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
-	response, err := grpc.TheaterServiceClient.GetTheater(mCtx, &proto.GetTheaterRequest{
+func GetTheater(theaterId, token []byte) (*proto.Theater, error) {
+	req := &proto.GetTheaterRequest{
 		TheaterId: string(theaterId),
-	})
-	if err != nil {
-		return nil, err
 	}
-	if response.Result == nil {
-		return nil, errors.New("could not find theater")
-	}
-	return response.Result, nil
-}
-
-func GetTheaterWithAuthToken(theaterId []byte, token []byte) (*proto.Theater, error) {
-	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
-	response, err := grpc.TheaterServiceClient.GetTheater(mCtx, &proto.GetTheaterRequest{
-		TheaterId: string(theaterId),
-		AuthRequest: &proto.AuthenticateRequest{
+	if token != nil {
+		req.AuthRequest = &proto.AuthenticateRequest{
 			Token: token,
-		},
-	})
+		}
+	}
+	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+	response, err := grpc.TheaterServiceClient.GetTheater(mCtx, req)
 	if err != nil {
 		return nil, err
 	}

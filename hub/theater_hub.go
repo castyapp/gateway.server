@@ -85,13 +85,8 @@ func (hub *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
 			event   = auth.Event().(*proto.TheaterLogOnEvent)
 		)
 
-		if auth.guest {
-			// getting theater from grpc service
-			theater, err = GetTheater(event.Room)
-		} else {
-			// getting theater from grpc service
-			theater, err = GetTheaterWithAuthToken(event.Room, event.Token)
-		}
+		// getting theater from grpc service
+		theater, err = GetTheater(event.Room, auth.token)
 
 		if err != nil {
 			client.ctxCancel()
