@@ -2,8 +2,6 @@ package theater
 
 import (
 	"github.com/CastyLab/gateway.server/hub"
-	"github.com/CastyLab/grpc.proto/proto"
-	"github.com/CastyLab/grpc.proto/protocol"
 	"github.com/MrJoshLab/go-respond"
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
@@ -12,25 +10,17 @@ import (
 func UpdateMediaSource(ctx *gin.Context)  {
 
 	var (
-		theaterId = ctx.PostForm("theater_id")
+		theaterId     = ctx.PostForm("theater_id")
 		mediaSourceId = ctx.PostForm("media_source_id")
+		token         = ctx.GetHeader("Authorization")
 	)
 
-	theaterRoom, err := hub.TheatersHub.FindRoom(theaterId)
+	room, err := hub.TheatersHub.FindRoom(theaterId)
+	theaterRoom := room.(*hub.TheaterRoom)
 	if err == nil {
-		event := &proto.MediaSourceChangedEvent{
-			TheaterId: theaterId,
-			MediaSourceId: mediaSourceId,
+		if err := theaterRoom.UpdateMediaSource(mediaSourceId, token); err != nil {
+			sentry.CaptureException(err)
 		}
-		theaterRoom.GetClients().IterCb(func(_ string, uc interface{}) {
-			client := uc.(*hub.Client)
-			buffer, err := protocol.NewMsgProtobuf(proto.EMSG_THEATER_MEDIA_SOURCE_CHANGED, event)
-			if err == nil {
-				_ = client.WriteMessage(buffer.Bytes())
-			}
-		})
-	} else {
-		sentry.CaptureException(err)
 	}
 
 	ctx.JSON(respond.Default.InsertSucceeded())

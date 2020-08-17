@@ -136,6 +136,42 @@ func (room *TheaterRoom) Join(client *Client) {
 	return
 }
 
+func (room *TheaterRoom) UpdateMediaSource(mediaSourceId, token string) error {
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20 * time.Second)
+	defer cancel()
+
+	response, err := grpc.TheaterServiceClient.GetMediaSource(ctx, &proto.MediaSourceAuthRequest{
+		AuthRequest: &proto.AuthenticateRequest{
+			Token: []byte(token),
+		},
+		Media: &proto.MediaSource{
+			Id: mediaSourceId,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("could not get media source :%v", err)
+	}
+
+	if len(response.Result) != 0 {
+		room.theater.MediaSource = response.Result[0]
+	}
+
+	event := &proto.MediaSourceChangedEvent{
+		TheaterId: room.theater.Id,
+		MediaSourceId: mediaSourceId,
+	}
+
+	room.GetClients().IterCb(func(_ string, uc interface{}) {
+		client := uc.(*Client)
+		buffer, err := protocol.NewMsgProtobuf(proto.EMSG_THEATER_MEDIA_SOURCE_CHANGED, event)
+		if err == nil {
+			_ = client.WriteMessage(buffer.Bytes())
+		}
+	})
+	return nil
+}
+
 // Check member exists in room
 func (room *TheaterRoom) HasMember(member *proto.User) (ok bool) {
 	return room.members.Has(member.Id)
