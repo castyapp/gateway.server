@@ -59,7 +59,7 @@ func (hub *TheaterHub) Close() error {
 }
 
 /* Get ws conn. and hands it over to correct room */
-func (hub *TheaterHub) Handler(w http.ResponseWriter, req *http.Request) {
+func (hub *TheaterHub) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	// Upgrade connection to websocket
 	conn, _, _, err := ws.UpgradeHTTP(req, w)

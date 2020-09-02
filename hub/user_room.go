@@ -3,7 +3,6 @@ package hub
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/CastyLab/gateway.server/redis"
 	"github.com/CastyLab/grpc.proto/protocol"
@@ -44,30 +43,45 @@ func (r *UserRoom) GetClients() cmap.ConcurrentMap {
 }
 
 func (r *UserRoom) UpdateState(client *Client, state proto.PERSONAL_STATE) {
+	if !client.IsGuest() {
+		r.updateMeOnFriendsList(&proto.PersonalStateMsgEvent{
+			State: state,
+			User:  client.GetUser(),
+		})
 
-	r.updateMeOnFriendsList(&proto.PersonalStateMsgEvent{
-		State: state,
-		User:  client.GetUser(),
-	})
+		mCtx, cancel := context.WithTimeout(client.ctx, time.Second * 10)
+		defer cancel()
 
-	mCtx, cancel := context.WithTimeout(client.ctx, time.Second * 10)
-	defer cancel()
+		hKey := fmt.Sprintf("user:%s", client.GetUser().Id)
 
-	hKey := fmt.Sprintf("user:%s", client.GetUser().Id)
-
-	switch state {
-	case proto.PERSONAL_STATE_ONLINE:
-		cmd := redis.Client.HSet(mCtx, hKey, "state", state.String())
-		if err := cmd.Err(); err != nil {
-			sentry.CaptureException(err)
-		}
-	case proto.PERSONAL_STATE_OFFLINE:
-		cmd := redis.Client.HDel(mCtx, hKey, "state")
-		if err := cmd.Err(); err != nil {
-			sentry.CaptureException(err)
+		switch state {
+		case proto.PERSONAL_STATE_ONLINE:
+			cmd := redis.Client.HSet(mCtx, hKey, "state", state.String())
+			if err := cmd.Err(); err != nil {
+				sentry.CaptureException(err)
+			}
+		case proto.PERSONAL_STATE_OFFLINE:
+			cmd := redis.Client.HDel(mCtx, hKey, "state")
+			if err := cmd.Err(); err != nil {
+				sentry.CaptureException(err)
+			}
 		}
 	}
+}
 
+func (r *UserRoom) SubscribeEvents(client *Client) {
+	if !client.IsGuest() {
+		sub := redis.Client.Subscribe(r.GetContext(), fmt.Sprintf("user:events:%s", client.GetUser().Id))
+		for {
+			select {
+			case event := <-sub.Channel():
+				if err := r.Send([]byte(event.Payload)); err != nil {
+					sentry.CaptureException(err)
+					continue
+				}
+			}
+		}
+	}
 }
 
 /* Add a conn to clients map so that it can be managed */
@@ -76,12 +90,14 @@ func (r *UserRoom) Join(client *Client) {
 	r.clients.SetIfAbsent(client.Id, client)
 	r.session = NewSession(client)
 
-	if err := r.GetAndFeatchFriendsState(client.ctx); err != nil {
-		sentry.CaptureException(fmt.Errorf("could not GetAndFeatchFriendsState : %v", err))
-	}
-
-	if r.clients.Count() == 1 {
-		r.UpdateState(client, proto.PERSONAL_STATE_ONLINE)
+	if !client.IsGuest() {
+		if err := r.FeatchFriendsState(client.ctx); err != nil {
+			sentry.CaptureException(fmt.Errorf("could not GetAndFeatchFriendsState : %v", err))
+		}
+		if r.clients.Count() == 1 {
+			r.UpdateState(client, proto.PERSONAL_STATE_ONLINE)
+		}
+		go r.SubscribeEvents(client)
 	}
 
 	if err := protocol.BrodcastMsgProtobuf(client.conn, proto.EMSG_AUTHORIZED, nil); err != nil {
@@ -114,14 +130,9 @@ func (r *UserRoom) UpdateUserEvent(token string) error {
 	// sending updated user to friends clients
 	r.friends.IterCb(func(key string, val interface{}) {
 		friend := val.(*proto.User)
-		friendRoom, err := r.hub.FindRoom(friend.Id)
+		buffer, err := protocol.NewMsgProtobuf(proto.EMSG_USER_UPDATED, response.Result)
 		if err == nil {
-			buffer, err := protocol.NewMsgProtobuf(proto.EMSG_USER_UPDATED, response.Result)
-			if err == nil {
-				if err = friendRoom.(*UserRoom).Send(buffer.Bytes()); err != nil {
-					sentry.CaptureException(fmt.Errorf("could not send updated user to friends: %v", err))
-				}
-			}
+			r.hub.SendEventToUser(r.GetContext(), buffer.Bytes(), friend)
 		}
 	})
 	return nil
@@ -157,11 +168,6 @@ func (r *UserRoom) SendProtoMessage(enum proto.EMSG, message *proto.Message) (er
 
 func (r *UserRoom) SendMessage(message *proto.Message) error {
 
-	room, err := r.hub.FindRoom(message.Reciever.Id)
-	if err != nil {
-		return errors.New("could not find friend's room")
-	}
-
 	from, err := json.Marshal(message.Sender)
 	if err != nil {
 		return err
@@ -180,38 +186,26 @@ func (r *UserRoom) SendMessage(message *proto.Message) error {
 		return err
 	}
 
-	if err := room.(*UserRoom).Send(buffer.Bytes()); err != nil {
-		return err
-	}
-
+	r.hub.SendEventToUser(r.GetContext(), buffer.Bytes(), message.Reciever)
 	return nil
 }
 
 func (r *UserRoom) updateMyActivityOnFriendsList(psme *proto.PersonalActivityMsgEvent) {
-
 	r.friends.IterCb(func(key string, val interface{}) {
 		friend := val.(*proto.User)
-		if friendRoom, err := r.hub.FindRoom(friend.Id); err == nil {
-			buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PERSONAL_ACTIVITY_CHANGED, psme)
-			if err == nil {
-				_ = friendRoom.(*UserRoom).Send(buffer.Bytes())
-			}
+		buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PERSONAL_ACTIVITY_CHANGED, psme)
+		if err == nil {
+			r.hub.SendEventToUser(r.GetContext(), buffer.Bytes(), friend)
 		}
 	})
-
 }
 
 func (r *UserRoom) updateMeOnFriendsList(psme *proto.PersonalStateMsgEvent) {
 	r.friends.IterCb(func(key string, val interface{}) {
 		friend := val.(*proto.User)
-		friendRoom, err := r.hub.FindRoom(friend.Id)
+		buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PERSONAL_STATE_CHANGED, psme)
 		if err == nil {
-			buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PERSONAL_STATE_CHANGED, psme)
-			if err == nil {
-				if err = friendRoom.(*UserRoom).Send(buffer.Bytes()); err != nil {
-					sentry.CaptureException(fmt.Errorf("could not send user's state to friends: %v", err))
-				}
-			}
+			r.hub.SendEventToUser(r.GetContext(), buffer.Bytes(), friend)
 		}
 	})
 }
@@ -230,7 +224,7 @@ func (r *UserRoom) FeatchFriends() error {
 	return nil
 }
 
-func (r *UserRoom) GetAndFeatchFriendsState(ctx context.Context) error {
+func (r *UserRoom) FeatchFriendsState(ctx context.Context) error {
 	if err := r.FeatchFriends(); err != nil {
 		return err
 	}

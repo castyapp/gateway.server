@@ -69,17 +69,17 @@ func main() {
 		router.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
 			switch request.Header.Get("Websocket-Room") {
 			case "USER-ROOM":
-				hub.UsersHub.Handler(writer, request)
+				hub.UsersHub.ServeHTTP(writer, request)
 				return
 			case "THEATER-ROOM":
-				hub.TheatersHub.Handler(writer, request)
+				hub.TheatersHub.ServeHTTP(writer, request)
 				return
 			}
 		}).Methods("GET")
 	default:
 		// routes for development
-		router.HandleFunc("/user", hub.UsersHub.Handler)
-		router.HandleFunc("/theater", hub.TheatersHub.Handler)
+		router.HandleFunc("/user", hub.UsersHub.ServeHTTP)
+		router.HandleFunc("/theater", hub.TheatersHub.ServeHTTP)
 	}
 
 	http.Handle("/", router)
