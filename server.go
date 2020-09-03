@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"github.com/CastyLab/gateway.server/hub"
-	"github.com/CastyLab/gateway.server/internal"
 	"github.com/getsentry/sentry-go"
 	"github.com/gorilla/mux"
 	_ "github.com/joho/godotenv/autoload"
@@ -31,7 +30,7 @@ func main() {
 
 	flag.Parse()
 
-	unixListener, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
 		sentry.CaptureException(err)
 		log.Fatal(err)
@@ -47,8 +46,8 @@ func main() {
 			log.Println(mErr)
 		}
 
-		// Close unix listener
-		if err := unixListener.Close(); err != nil {
+		// Close listener
+		if err := listener.Close(); err != nil {
 			mErr := fmt.Errorf("could not close UnixListener: %v", err)
 			sentry.CaptureException(mErr)
 			log.Println(mErr)
@@ -82,10 +81,6 @@ func main() {
 		router.HandleFunc("/theater", hub.TheatersHub.ServeHTTP)
 	}
 
-	http.Handle("/", router)
-
-	go internal.NewInternalRouter()
-
 	log.Printf("%s server running and listeting on http://0.0.0.0:%d", *env, *port)
-	log.Printf("http_err: %v", http.Serve(unixListener, nil))
+	log.Printf("http_err: %v", http.Serve(listener, router))
 }

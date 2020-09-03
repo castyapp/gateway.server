@@ -10,6 +10,7 @@ const (
 )
 
 type Room interface {
+	GetType() RoomType
 	GetName() string
 	Join(c *Client)
 	HandleEvents(c *Client) error

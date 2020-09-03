@@ -34,6 +34,10 @@ type TheaterRoom struct {
 	vp *VideoPlayer
 }
 
+func (room *TheaterRoom) GetType() RoomType {
+	return TheaterRoomType
+}
+
 func (room *TheaterRoom) GetName() string {
 	return room.theater.MediaSource.Title
 }

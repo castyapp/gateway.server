@@ -26,6 +26,10 @@ type UserRoom struct {
 	session   *Session
 }
 
+func (r *UserRoom) GetType() RoomType {
+	return UserRoomType
+}
+
 func (r *UserRoom) GetName() string {
 	return r.name
 }

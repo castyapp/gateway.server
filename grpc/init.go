@@ -22,7 +22,7 @@ func init() {
 		port = os.Getenv("GRPC_PORT")
 	)
 
-	conn, err := grpc.Dial(fmt.Sprintf("%s:%s", host, port), grpc.WithInsecure())
+	conn, err := grpc.Dial(fmt.Sprintf("%s:%s", host, port), grpc.WithInsecure(), WithAuthInterceptor())
 	if err != nil {
 		log.Fatal(err)
 	}
