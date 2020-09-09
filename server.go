@@ -3,34 +3,45 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/CastyLab/gateway.server/config"
 	"github.com/CastyLab/gateway.server/hub"
 	"github.com/getsentry/sentry-go"
 	"github.com/gorilla/mux"
-	_ "github.com/joho/godotenv/autoload"
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"time"
 )
 
-func main() {
+var (
+	port *int
+	host *string
+	env *string
+)
 
-	log.SetFlags(log.Lshortfile | log.Ltime)
+func init() {
+	log.SetFlags(log.Ltime | log.Lshortfile)
 
-	if err := sentry.Init(sentry.ClientOptions{Dsn: os.Getenv("SENTRY_DSN")}); err != nil {
-		log.Fatal(err)
-	}
-
-	var (
-		router     = mux.NewRouter()
-		port       = flag.Int("port", 3000, "Server port")
-		env        = flag.String("env", "development", "Environment")
-	)
+	port = flag.Int("port", 3000, "Gateway server port")
+	host = flag.String("host", "0.0.0.0", "Gateway server host")
+	env  = flag.String("env", "development", "Environment")
+	configFileName := flag.String("config-file", "config.yml", "config.yaml file")
 
 	flag.Parse()
+	log.Printf("Loading ConfigMap from file: [%s]", *configFileName)
 
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
+	if err := config.Load(*configFileName); err != nil {
+		log.Fatal(fmt.Errorf("could not load config: %v", err))
+	}
+
+	if err := sentry.Init(sentry.ClientOptions{ Dsn: config.Map.Secrets.SentryDsn }); err != nil {
+		log.Fatal(fmt.Errorf("could not initilize sentry: %v", err))
+	}
+}
+
+func main() {
+
+	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", *host, *port))
 	if err != nil {
 		sentry.CaptureException(err)
 		log.Fatal(err)
@@ -62,6 +73,8 @@ func main() {
 
 	}()
 
+	router := mux.NewRouter()
+
 	switch *env {
 	case "production":
 		// Handle caddy proxy server
@@ -81,6 +94,6 @@ func main() {
 		router.HandleFunc("/theater", hub.TheatersHub.ServeHTTP)
 	}
 
-	log.Printf("%s server running and listeting on http://0.0.0.0:%d", *env, *port)
+	log.Printf("%s server running and listeting on http://%s:%d", *env, *host, *port)
 	log.Printf("http_err: %v", http.Serve(listener, router))
 }

@@ -4,7 +4,6 @@ import (
 	"github.com/CastyLab/gateway.server/hub"
 	"github.com/CastyLab/grpc.proto/protocol"
 	"github.com/gorilla/websocket"
-	_ "github.com/joho/godotenv/autoload"
 	"net/http"
 	"net/http/httptest"
 	"strings"

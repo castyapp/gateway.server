@@ -3,32 +3,29 @@ package redis
 import (
 	"context"
 	"fmt"
+	"github.com/CastyLab/gateway.server/config"
 	"github.com/go-redis/redis/v8"
 	"log"
-	"os"
 )
 
 var (
 	Client *redis.Client
 )
 
-func init()  {
-
+func Configure() error {
 	var (
-		host     = os.Getenv("REDIS_HOST")
-		port     = os.Getenv("REDIS_PORT")
-		password = os.Getenv("REDIS_PASS")
+		host     = config.Map.Secrets.Redis.Host
+		port     = config.Map.Secrets.Redis.Port
+		password = config.Map.Secrets.Redis.Pass
 	)
-
 	Client = redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:%s", host, port),
+		Addr:     fmt.Sprintf("%s:%d", host, port),
 		Password: password,
 		DB:       0,
 	})
-
 	cmd := Client.Ping(context.Background())
 	if res := cmd.Val(); res != "PONG" {
 		log.Fatalf("Could not ping the redis server: %v", cmd.Err())
 	}
-
+	return nil
 }

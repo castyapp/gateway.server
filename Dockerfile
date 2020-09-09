@@ -19,4 +19,5 @@ RUN go build -o casty.gateway.server .
 
 EXPOSE 3000
 
-ENTRYPOINT ["./casty.gateway.server", "--port", "3000"]
+ENTRYPOINT ["./casty.gateway.server"]
+CMD ["--port", "3000"]

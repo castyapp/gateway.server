@@ -1,0 +1,14 @@
+app:
+  version: "0.1-dev"
+  debug: true
+  env: "dev"
+grpc:
+  host: "localhost"
+  port: 55283
+secrets:
+  redis:
+    host: "localhost"
+    port: 6379
+    pass: "super-secure-password"
+  sentry_dsn: ""
+storage_path: "/Users/josh/.volumes/casty_storage"

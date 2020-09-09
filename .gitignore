@@ -5,3 +5,4 @@ Caddyfile
 /client
 *.sock
 docker-compose.yml
+config.yml
