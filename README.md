@@ -12,16 +12,17 @@ $ git clone https://github.com/CastyLab/gateway.server.git
 ```
 
 ## Configuraition
-Make a copy of `.env.example` for your own configuration. save it as `.env` file.
+Make a copy of `config.example.yml` for your own configuration. save it as `config.yml` file.
 ```bash
-$ cp .env.example .env
+$ cp config.example.yml config.yml
 ```
 
 ### gRPC configuration
 Put your running grpc.server connection details
-```env
-GRPC_HOST=localhost
-GRPC_PORT=55283
+```yaml
+grpc:
+  host: "localhost"
+  port: 55283
 ```
 
 You're ready to Go!
