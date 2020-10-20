@@ -1,0 +1,22 @@
+FROM golang:1.14-alpine AS builder
+
+LABEL maintainer="Alireza Josheghani <josheghani.dev@gmail.com>"
+
+# Creating work directory
+WORKDIR /app
+
+# Adding project to work directory
+ADD . /app
+
+# build project
+RUN go build -o server .
+
+FROM alpine:latest
+
+WORKDIR /app
+COPY --from=builder /app/server /app
+
+EXPOSE 9002
+
+ENTRYPOINT ["/app/server"]
+CMD ["--port", "3000"]
