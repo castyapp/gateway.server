@@ -75,24 +75,9 @@ func main() {
 
 	router := mux.NewRouter()
 
-	switch *env {
-	case "production":
-		// Handle caddy proxy server
-		router.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
-			switch request.Header.Get("Websocket-Room") {
-			case "USER-ROOM":
-				hub.UsersHub.ServeHTTP(writer, request)
-				return
-			case "THEATER-ROOM":
-				hub.TheatersHub.ServeHTTP(writer, request)
-				return
-			}
-		}).Methods("GET")
-	default:
-		// routes for development
-		router.HandleFunc("/user", hub.UsersHub.ServeHTTP)
-		router.HandleFunc("/theater", hub.TheatersHub.ServeHTTP)
-	}
+	// routes for development
+	router.HandleFunc("/user", hub.UsersHub.ServeHTTP)
+	router.HandleFunc("/theater", hub.TheatersHub.ServeHTTP)
 
 	log.Printf("%s server running and listeting on http://%s:%d", *env, *host, *port)
 	log.Printf("http_err: %v", http.Serve(listener, router))
