@@ -93,14 +93,14 @@ func main() {
 	}()
 
 	userGatewayRouter := mux.NewRouter()
-	userGatewayRouter.HandleFunc("/user", hub.UsersHub.ServeHTTP)
+	userGatewayRouter.HandleFunc("/", hub.UsersHub.ServeHTTP)
 	log.Printf("[UserGateway] %s server running and listeting on http://%s:%d", *env, *userGatewayHost, *userGatewayPort)
 	go func() {
 		log.Printf("http_err: %v", http.Serve(userGatewayListener, userGatewayRouter))
 	}()
 
 	theaterGatewayRouter := mux.NewRouter()
-	theaterGatewayRouter.HandleFunc("/user", hub.UsersHub.ServeHTTP)
+	theaterGatewayRouter.HandleFunc("/", hub.UsersHub.ServeHTTP)
 	log.Printf("[TheaterGateway] %s server running and listeting on http://%s:%d", *env, *theaterGatewayHost, *theaterGatewayPort)
 	log.Printf("http_err: %v", http.Serve(theaterGatewayListener, theaterGatewayRouter))
 }
