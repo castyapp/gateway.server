@@ -17,7 +17,8 @@ WORKDIR /code
 # build project
 RUN go build -o casty.gateway.server .
 
-EXPOSE 3000
+EXPOSE 3001
+EXPOSE 3002
 
 ENTRYPOINT ["./casty.gateway.server"]
-CMD ["--port", "3000"]
+CMD ["--ug-port", "3001", "--tg-port", "3002"]

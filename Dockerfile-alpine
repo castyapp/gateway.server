@@ -16,7 +16,8 @@ FROM alpine:latest
 WORKDIR /app
 COPY --from=builder /app/server /app
 
-EXPOSE 9002
+EXPOSE 3001
+EXPOSE 3002
 
 ENTRYPOINT ["/app/server"]
-CMD ["--port", "3000"]
+CMD ["--ug-port", "3001", "--tg-port", "3002"]
