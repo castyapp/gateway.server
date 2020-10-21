@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/CastyLab/gateway.server/config"
+	"github.com/CastyLab/gateway.server/grpc"
 	"github.com/CastyLab/gateway.server/hub"
 	"github.com/getsentry/sentry-go"
 	"github.com/gorilla/mux"
@@ -38,6 +39,10 @@ func init() {
 
 	if err := config.Load(*configFileName); err != nil {
 		log.Fatal(fmt.Errorf("could not load config: %v", err))
+	}
+
+	if err := grpc.Configure(); err != nil {
+		log.Fatal(fmt.Errorf("could not configure grpc.server: %v", err))
 	}
 
 	if err := sentry.Init(sentry.ClientOptions{ Dsn: config.Map.Secrets.SentryDsn }); err != nil {
