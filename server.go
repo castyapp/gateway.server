@@ -6,6 +6,7 @@ import (
 	"github.com/CastyLab/gateway.server/config"
 	"github.com/CastyLab/gateway.server/grpc"
 	"github.com/CastyLab/gateway.server/hub"
+	"github.com/CastyLab/gateway.server/redis"
 	"github.com/getsentry/sentry-go"
 	"github.com/gorilla/mux"
 	"log"
@@ -43,6 +44,10 @@ func init() {
 
 	if err := grpc.Configure(); err != nil {
 		log.Fatal(fmt.Errorf("could not configure grpc.server: %v", err))
+	}
+
+	if err := redis.Configure(); err != nil {
+		log.Fatal(fmt.Errorf("could not configure redis: %v", err))
 	}
 
 	if err := sentry.Init(sentry.ClientOptions{ Dsn: config.Map.Secrets.SentryDsn }); err != nil {
