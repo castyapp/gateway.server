@@ -7,8 +7,10 @@ grpc:
   port: 55283
 secrets:
   redis:
-    host: "localhost"
-    port: 6379
+    masterName: mymaster
+    sentinels:
+      - "sentinel-0:5000"
+      - "sentinel-1:5000"
     pass: "super-secure-password"
   sentry_dsn: ""
 storage_path: "/Users/josh/.volumes/casty_storage"

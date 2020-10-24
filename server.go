@@ -73,6 +73,13 @@ func main() {
 
 	defer func() {
 
+		// Close redis
+		if err := redis.Close(); err != nil {
+			mErr := fmt.Errorf("could not close Redis: %v", err)
+			sentry.CaptureException(mErr)
+			log.Println(mErr)
+		}
+
 		// Close userhub
 		if err := hub.UsersHub.Close(); err != nil {
 			mErr := fmt.Errorf("could not close UserHub: %v", err)
