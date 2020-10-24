@@ -2,7 +2,6 @@ package hub
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"github.com/CastyLab/gateway.server/redis"
 	"github.com/CastyLab/grpc.proto/proto"
@@ -20,26 +19,8 @@ type UserHub struct {
 	cmap.ConcurrentMap
 }
 
-// find user's room
-func (hub *UserHub) FindRoom(name string) (room Room, err error) {
-	if r, ok := hub.Get(name); ok {
-		return r.(*UserRoom), nil
-	}
-	return nil, errors.New("user room is missing from cmp")
-}
-
-func (hub *UserHub) SendEventToUser(ctx context.Context, event []byte, user *proto.User)  {
+func SendEventToUser(ctx context.Context, event []byte, user *proto.User)  {
 	redis.Client.Publish(ctx, fmt.Sprintf("user:events:%s", user.Id), event)
-}
-
-// Create or get user's room
-func (hub *UserHub) GetOrCreateRoom(name string) (room Room) {
-	if r, ok := hub.Get(name); ok {
-		return r.(*UserRoom)
-	}
-	room = NewUserRoom(name, hub)
-	hub.SetIfAbsent(name, room)
-	return
 }
 
 // remove user's room from concurrent map
@@ -73,7 +54,7 @@ func (hub *UserHub) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	// Join user room if client received authorized
 	client.OnAuthorized(func(auth Auth) (room Room) {
-		room = hub.GetOrCreateRoom(auth.User().Id)
+		room = NewUserRoom(auth.User().Id)
 		room.Join(client)
 		return
 	})

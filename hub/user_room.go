@@ -20,8 +20,6 @@ import (
 /* Has a name, clients, count which holds the actual coutn and index which acts as the unique id */
 type UserRoom struct {
 	name      string
-	hub       *UserHub
-	clients   cmap.ConcurrentMap
 	friends   cmap.ConcurrentMap
 	session   *Session
 }
@@ -40,10 +38,6 @@ func (r *UserRoom) GetContext() context.Context {
 
 func (r *UserRoom) AddFriend(friend *proto.User) {
 	r.friends.Set(friend.Id, friend)
-}
-
-func (r *UserRoom) GetClients() cmap.ConcurrentMap {
-	return r.clients
 }
 
 func (r *UserRoom) UpdateState(client *Client, state proto.PERSONAL_STATE) {
@@ -79,7 +73,7 @@ func (r *UserRoom) SubscribeEvents(client *Client) {
 		for {
 			select {
 			case event := <-sub.Channel():
-				if err := r.Send([]byte(event.Payload)); err != nil {
+				if err := client.WriteMessage([]byte(event.Payload)); err != nil {
 					sentry.CaptureException(err)
 					continue
 				}
@@ -91,16 +85,13 @@ func (r *UserRoom) SubscribeEvents(client *Client) {
 /* Add a conn to clients map so that it can be managed */
 func (r *UserRoom) Join(client *Client) {
 
-	r.clients.SetIfAbsent(client.Id, client)
 	r.session = NewSession(client)
 
 	if !client.IsGuest() {
-		if err := r.FeatchFriendsState(client.ctx); err != nil {
+		if err := r.FeatchFriendsState(client); err != nil {
 			sentry.CaptureException(fmt.Errorf("could not GetAndFeatchFriendsState : %v", err))
 		}
-		if r.clients.Count() == 1 {
-			r.UpdateState(client, proto.PERSONAL_STATE_ONLINE)
-		}
+		r.UpdateState(client, proto.PERSONAL_STATE_ONLINE)
 		go r.SubscribeEvents(client)
 	}
 
@@ -110,64 +101,9 @@ func (r *UserRoom) Join(client *Client) {
 	}
 }
 
-func (r *UserRoom) UpdateUserEvent(token string) error {
-
-	ctx, cancel := context.WithTimeout(context.Background(), 20 * time.Second)
-	defer cancel()
-
-	response, err := grpc.UserServiceClient.GetUser(ctx, &proto.AuthenticateRequest{
-		Token: []byte(token),
-	})
-	if err != nil {
-		return err
-	}
-
-	// sending updated user to user's clients
-	r.GetClients().IterCb(func(_ string, uc interface{}) {
-		client := uc.(*Client)
-		buffer, err := protocol.NewMsgProtobuf(proto.EMSG_USER_UPDATED, response.Result)
-		if err == nil {
-			_ = client.WriteMessage(buffer.Bytes())
-		}
-	})
-
-	// sending updated user to friends clients
-	r.friends.IterCb(func(key string, val interface{}) {
-		friend := val.(*proto.User)
-		buffer, err := protocol.NewMsgProtobuf(proto.EMSG_USER_UPDATED, response.Result)
-		if err == nil {
-			r.hub.SendEventToUser(r.GetContext(), buffer.Bytes(), friend)
-		}
-	})
-	return nil
-}
-
 /* Removes client from room */
 func (r *UserRoom) Leave(client *Client) {
-	r.clients.Remove(client.Id)
-	if r.clients.Count() == 0 {
-		r.UpdateState(client, proto.PERSONAL_STATE_OFFLINE)
-		r.hub.RemoveRoom(r.name)
-	}
-}
-
-func (r *UserRoom) Send(msg []byte) (err error) {
-	r.clients.IterCb(func(key string, v interface{}) {
-		err = v.(*Client).WriteMessage(msg)
-	})
-	return
-}
-
-func (r *UserRoom) SendProtoMessage(enum proto.EMSG, message *proto.Message) (err error) {
-	buffer, err := protocol.NewMsgProtobuf(enum, message)
-	if err != nil {
-		return err
-	}
-	if err := r.Send(buffer.Bytes()); err != nil {
-		sentry.CaptureException(fmt.Errorf("could not send proto message : %v", err))
-		return err
-	}
-	return nil
+	r.UpdateState(client, proto.PERSONAL_STATE_OFFLINE)
 }
 
 func (r *UserRoom) SendMessage(message *proto.Message) error {
@@ -190,7 +126,7 @@ func (r *UserRoom) SendMessage(message *proto.Message) error {
 		return err
 	}
 
-	r.hub.SendEventToUser(r.GetContext(), buffer.Bytes(), message.Reciever)
+	SendEventToUser(r.GetContext(), buffer.Bytes(), message.Reciever)
 	return nil
 }
 
@@ -199,7 +135,7 @@ func (r *UserRoom) updateMyActivityOnFriendsList(psme *proto.PersonalActivityMsg
 		friend := val.(*proto.User)
 		buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PERSONAL_ACTIVITY_CHANGED, psme)
 		if err == nil {
-			r.hub.SendEventToUser(r.GetContext(), buffer.Bytes(), friend)
+			SendEventToUser(r.GetContext(), buffer.Bytes(), friend)
 		}
 	})
 }
@@ -209,7 +145,7 @@ func (r *UserRoom) updateMeOnFriendsList(psme *proto.PersonalStateMsgEvent) {
 		friend := val.(*proto.User)
 		buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PERSONAL_STATE_CHANGED, psme)
 		if err == nil {
-			r.hub.SendEventToUser(r.GetContext(), buffer.Bytes(), friend)
+			SendEventToUser(r.GetContext(), buffer.Bytes(), friend)
 		}
 	})
 }
@@ -228,19 +164,21 @@ func (r *UserRoom) FeatchFriends() error {
 	return nil
 }
 
-func (r *UserRoom) FeatchFriendsState(ctx context.Context) error {
+func (r *UserRoom) FeatchFriendsState(client *Client) error {
+
 	if err := r.FeatchFriends(); err != nil {
 		return err
 	}
+
 	r.friends.IterCb(func(key string, v interface{}) {
 		friend, ok := v.(*proto.User)
 		if ok {
-			cmd := redis.Client.HGet(ctx, fmt.Sprintf("user:%s", friend.Id), "state")
+			cmd := redis.Client.HGet(client.ctx, fmt.Sprintf("user:%s", friend.Id), "state")
 			if err := cmd.Err(); err != nil {
 				sentry.CaptureException(fmt.Errorf("could not get friend from redis: %v", err))
 				return
 			}
-			activityCmd := redis.Client.HGet(ctx, fmt.Sprintf("user:%s", friend.Id), "activity")
+			activityCmd := redis.Client.HGet(client.ctx, fmt.Sprintf("user:%s", friend.Id), "activity")
 			if err := activityCmd.Err(); err != nil {
 				if err != redis2.Nil {
 					log.Println(err)
@@ -268,9 +206,7 @@ func (r *UserRoom) FeatchFriendsState(ctx context.Context) error {
 
 				buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PERSONAL_STATE_CHANGED, psm)
 				if err == nil {
-					if err := r.Send(buffer.Bytes()); err != nil {
-						sentry.CaptureException(fmt.Errorf("could not send friend's psm to user! : %v", err))
-					}
+					SendEventToUser(client.ctx, buffer.Bytes(), client.GetUser())
 				}
 			}
 		}
@@ -341,11 +277,9 @@ func (r *UserRoom) HandleEvents(client *Client) error {
 }
 
 /* Constructor */
-func NewUserRoom(name string, hub *UserHub) (room *UserRoom) {
+func NewUserRoom(name string) (room *UserRoom) {
 	return &UserRoom{
 		name:    name,
-		clients: cmap.New(),
 		friends: cmap.New(),
-		hub:     hub,
 	}
 }
