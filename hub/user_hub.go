@@ -3,6 +3,7 @@ package hub
 import (
 	"context"
 	"fmt"
+	"github.com/CastyLab/gateway.server/grpc"
 	"github.com/CastyLab/gateway.server/redis"
 	"github.com/CastyLab/grpc.proto/proto"
 	"github.com/getsentry/sentry-go"
@@ -21,6 +22,19 @@ type UserHub struct {
 
 func SendEventToUser(ctx context.Context, event []byte, user *proto.User)  {
 	redis.Client.Publish(ctx, fmt.Sprintf("user:events:%s", user.Id), event)
+}
+
+func SendEventToUserFriends(ctx context.Context, event []byte, client *Client) error {
+	response, err := grpc.UserServiceClient.GetFriends(ctx, &proto.AuthenticateRequest{
+		Token: client.Token(),
+	})
+	if err != nil {
+		return err
+	}
+	for _, friend := range response.Result {
+		redis.Client.Publish(ctx, fmt.Sprintf("user:events:%s", friend.Id), event)
+	}
+	return nil
 }
 
 // remove user's room from concurrent map
