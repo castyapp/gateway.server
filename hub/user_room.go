@@ -75,7 +75,7 @@ func (r *UserRoom) UpdateState(client *Client, state proto.PERSONAL_STATE) {
 
 func (r *UserRoom) SubscribeEvents(client *Client) {
 	if !client.IsGuest() {
-		sub := redis.Client.Subscribe(r.GetContext(), fmt.Sprintf("user:events:%s", client.GetUser().Id))
+		sub := redis.Client.Subscribe(client.ctx, fmt.Sprintf("user:events:%s", client.GetUser().Id))
 		for {
 			select {
 			case event := <-sub.Channel():

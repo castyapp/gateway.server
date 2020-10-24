@@ -3,7 +3,7 @@ module github.com/CastyLab/gateway.server
 go 1.14
 
 require (
-	github.com/CastyLab/grpc.proto v0.0.0-20200818101932-90df08684905
+	github.com/CastyLab/grpc.proto v0.0.0-20201024203352-28756769b0b7
 	github.com/getsentry/sentry-go v0.5.1
 	github.com/go-redis/redis/v8 v8.0.0-beta.5
 	github.com/gobwas/ws v1.0.3

@@ -20,6 +20,7 @@ func Configure() error {
 	})
 	cmd := Client.Ping(context.Background())
 	if res := cmd.Val(); res != "PONG" {
+		log.Println("SentinelAddrs: ", config.Map.Secrets.Redis.Sentinels)
 		log.Fatalf("Could not ping the redis server: %v", cmd.Err())
 	}
 	return nil
