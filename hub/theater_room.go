@@ -34,6 +34,12 @@ func (room *TheaterRoom) Join(client *Client) {
 
 	if !client.IsGuest() {
 
+		clientsKey := fmt.Sprintf("theater:clients:%s", room.theater.Id)
+		exists := redis.Client.SIsMember(client.ctx, clientsKey, client.Id)
+		if !exists.Val() {
+			redis.Client.SAdd(client.ctx, clientsKey, client.Id)
+		}
+
 		// Get current client's user object
 		mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
 		response, err := grpc.UserServiceClient.GetUser(mCtx, &proto.AuthenticateRequest{
@@ -47,23 +53,13 @@ func (room *TheaterRoom) Join(client *Client) {
 		// check if user has default state
 		// if it has, then do nothing with state
 		if response.Result.State != proto.PERSONAL_STATE_ONLINE {
-
-			// Update user's activity to this theater
-			if err := room.updateUserActivity(client); err != nil {
-				sentry.CaptureException(err)
-			}
-
-			_, err = grpc.UserServiceClient.UpdateState(mCtx, &proto.UpdateStateRequest{
-				State: proto.PERSONAL_STATE_ONLINE,
-				AuthRequest: &proto.AuthenticateRequest{
-					Token: client.Token(),
-				},
-			})
-			if err != nil {
-				sentry.CaptureException(err)
+			if response.Result.Activity.Id != room.theater.Id {
+				// Update user's activity to this theater
+				if err := room.updateUserActivity(client); err != nil {
+					sentry.CaptureException(err)
+				}
 			}
 		}
-
 	}
 
 	if client.IsGuest() {
@@ -144,17 +140,16 @@ func (room *TheaterRoom) removeUserActivity(client *Client) error {
 
 /* Removes client from room */
 func (room *TheaterRoom) Leave(client *Client) {
-
 	if !client.IsGuest() {
 		// Remove user's activity
 		_ = room.removeUserActivity(client)
 	}
-
-	// check if room clients are empty then removing room from cmp
-	//if room.clients.Count() == 0 {
-	//	room.vp.Pause()
-	//}
-
+	clientsKey := fmt.Sprintf("theater:clients:%s", room.theater.Id)
+	redis.Client.SRem(client.ctx, clientsKey, client.Id)
+	clients := redis.Client.SMembers(client.ctx, clientsKey)
+	if len(clients.Val()) == 0 {
+		room.vp.Pause()
+	}
 }
 
 func (room *TheaterRoom) Sync(client *Client) {

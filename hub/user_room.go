@@ -42,26 +42,30 @@ func (r *UserRoom) AddFriend(friend *proto.User) {
 
 func (r *UserRoom) UpdateState(client *Client, state proto.PERSONAL_STATE) {
 	if !client.IsGuest() {
-		r.updateMeOnFriendsList(&proto.PersonalStateMsgEvent{
-			State: state,
-			User:  client.GetUser(),
-		})
 
 		mCtx, cancel := context.WithTimeout(client.ctx, time.Second * 10)
 		defer cancel()
 
-		hKey := fmt.Sprintf("user:%s", client.GetUser().Id)
+		_, err := grpc.UserServiceClient.UpdateState(mCtx, &proto.UpdateStateRequest{
+			State: state,
+			AuthRequest: &proto.AuthenticateRequest{
+				Token: client.Token(),
+			},
+		})
 
-		switch state {
-		case proto.PERSONAL_STATE_ONLINE:
-			cmd := redis.Client.HSet(mCtx, hKey, "state", state.String())
-			if err := cmd.Err(); err != nil {
-				sentry.CaptureException(err)
-			}
-		case proto.PERSONAL_STATE_OFFLINE:
-			cmd := redis.Client.HDel(mCtx, hKey, "state")
-			if err := cmd.Err(); err != nil {
-				sentry.CaptureException(err)
+		if err == nil {
+			hKey := fmt.Sprintf("user:%s", client.GetUser().Id)
+			switch state {
+			case proto.PERSONAL_STATE_ONLINE:
+				cmd := redis.Client.HSet(mCtx, hKey, "state", state.String())
+				if err := cmd.Err(); err != nil {
+					sentry.CaptureException(err)
+				}
+			case proto.PERSONAL_STATE_OFFLINE:
+				cmd := redis.Client.HDel(mCtx, hKey, "state")
+				if err := cmd.Err(); err != nil {
+					sentry.CaptureException(err)
+				}
 			}
 		}
 	}
@@ -82,16 +86,28 @@ func (r *UserRoom) SubscribeEvents(client *Client) {
 	}
 }
 
-/* Add a conn to clients map so that it can be managed */
 func (r *UserRoom) Join(client *Client) {
 
 	r.session = NewSession(client)
 
 	if !client.IsGuest() {
+
+		uClientsKey := fmt.Sprintf("user:clients:%s", client.GetUser().Id)
+		exists := redis.Client.SIsMember(client.ctx, uClientsKey, client.Id)
+		if !exists.Val() {
+			redis.Client.SAdd(client.ctx, uClientsKey, client.Id)
+		}
+		clients := redis.Client.SMembers(client.ctx, uClientsKey).Val()
+
 		if err := r.FeatchFriendsState(client); err != nil {
 			sentry.CaptureException(fmt.Errorf("could not GetAndFeatchFriendsState : %v", err))
 		}
-		r.UpdateState(client, proto.PERSONAL_STATE_ONLINE)
+
+		if len(clients) == 1 {
+			r.UpdateState(client, proto.PERSONAL_STATE_ONLINE)
+		}
+
+		// subscribe to user's events on redis
 		go r.SubscribeEvents(client)
 	}
 
@@ -101,9 +117,13 @@ func (r *UserRoom) Join(client *Client) {
 	}
 }
 
-/* Removes client from room */
 func (r *UserRoom) Leave(client *Client) {
-	r.UpdateState(client, proto.PERSONAL_STATE_OFFLINE)
+	uClientsKey := fmt.Sprintf("user:clients:%s", client.GetUser().Id)
+	redis.Client.SRem(client.ctx, uClientsKey, client.Id)
+	clients := redis.Client.SMembers(client.ctx, uClientsKey).Val()
+	if len(clients) == 0 {
+		r.UpdateState(client, proto.PERSONAL_STATE_OFFLINE)
+	}
 }
 
 func (r *UserRoom) SendMessage(message *proto.Message) error {
@@ -134,16 +154,6 @@ func (r *UserRoom) updateMyActivityOnFriendsList(psme *proto.PersonalActivityMsg
 	r.friends.IterCb(func(key string, val interface{}) {
 		friend := val.(*proto.User)
 		buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PERSONAL_ACTIVITY_CHANGED, psme)
-		if err == nil {
-			SendEventToUser(r.GetContext(), buffer.Bytes(), friend)
-		}
-	})
-}
-
-func (r *UserRoom) updateMeOnFriendsList(psme *proto.PersonalStateMsgEvent) {
-	r.friends.IterCb(func(key string, val interface{}) {
-		friend := val.(*proto.User)
-		buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PERSONAL_STATE_CHANGED, psme)
 		if err == nil {
 			SendEventToUser(r.GetContext(), buffer.Bytes(), friend)
 		}
