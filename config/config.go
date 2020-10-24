@@ -19,8 +19,8 @@ type ConfMap struct {
 	} `yaml:"grpc"`
 	Secrets struct {
 		Redis struct {
-			Host string `yaml:"host"`
-			Port int    `yaml:"port"`
+			MasterName string `yaml:"masterName"`
+			Sentinels []string
 			Pass string `yaml:"pass"`
 		} `yaml:"redis"`
 		SentryDsn      string `yaml:"sentry_dsn"`
