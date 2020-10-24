@@ -17,15 +17,6 @@ type TheaterHub struct {
 	cmap.ConcurrentMap
 }
 
-/* If room doesn't exist creates it then returns it */
-func (hub *TheaterHub) GetOrCreateRoom(theater *proto.Theater) (room Room) {
-	if r, ok := hub.Get(theater.Id); ok {
-		return r.(*TheaterRoom)
-	}
-	hub.Set(theater.Id, NewTheaterRoom(theater))
-	return
-}
-
 func (hub *TheaterHub) Close() error {
 	return nil
 }
@@ -66,7 +57,7 @@ func (hub *TheaterHub) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 
-		room = hub.GetOrCreateRoom(theater)
+		room = NewTheaterRoom(theater)
 		room.Join(client)
 		return
 	})
