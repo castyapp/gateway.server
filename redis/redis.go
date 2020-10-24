@@ -14,7 +14,7 @@ var (
 func Configure() error {
 	Client = redis.NewFailoverClient(&redis.FailoverOptions{
 		SentinelAddrs: config.Map.Secrets.Redis.Sentinels,
-		SentinelPassword: config.Map.Secrets.Redis.Pass,
+		Password: config.Map.Secrets.Redis.Pass,
 		MasterName: config.Map.Secrets.Redis.MasterName,
 		DB: 0,
 	})

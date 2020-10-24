@@ -71,6 +71,11 @@ func main() {
 		return
 	}
 
+	var (
+		usersHub    = hub.NewUserHub()
+		theatersHub = hub.NewTheaterHub()
+	)
+
 	defer func() {
 
 		// Close redis
@@ -80,9 +85,16 @@ func main() {
 			log.Println(mErr)
 		}
 
-		// Close userhub
-		if err := hub.UsersHub.Close(); err != nil {
+		// Close usersHub
+		if err := usersHub.Close(); err != nil {
 			mErr := fmt.Errorf("could not close UserHub: %v", err)
+			sentry.CaptureException(mErr)
+			log.Println(mErr)
+		}
+
+		// Close theatersHub
+		if err := theatersHub.Close(); err != nil {
+			mErr := fmt.Errorf("could not close TheatersHub: %v", err)
 			sentry.CaptureException(mErr)
 			log.Println(mErr)
 		}
@@ -110,14 +122,14 @@ func main() {
 	}()
 
 	userGatewayRouter := mux.NewRouter()
-	userGatewayRouter.HandleFunc("/", hub.UsersHub.ServeHTTP)
+	userGatewayRouter.HandleFunc("/", usersHub.ServeHTTP)
 	log.Printf("[UserGateway] %s server running and listeting on http://%s:%d", *env, *userGatewayHost, *userGatewayPort)
 	go func() {
 		log.Printf("http_err: %v", http.Serve(userGatewayListener, userGatewayRouter))
 	}()
 
 	theaterGatewayRouter := mux.NewRouter()
-	theaterGatewayRouter.HandleFunc("/", hub.UsersHub.ServeHTTP)
+	theaterGatewayRouter.HandleFunc("/", theatersHub.ServeHTTP)
 	log.Printf("[TheaterGateway] %s server running and listeting on http://%s:%d", *env, *theaterGatewayHost, *theaterGatewayPort)
 	log.Printf("http_err: %v", http.Serve(theaterGatewayListener, theaterGatewayRouter))
 }

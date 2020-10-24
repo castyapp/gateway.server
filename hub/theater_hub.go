@@ -1,7 +1,6 @@
 package hub
 
 import (
-	"errors"
 	"github.com/CastyLab/grpc.proto/proto"
 	"github.com/getsentry/sentry-go"
 	"github.com/gobwas/ws"
@@ -14,16 +13,8 @@ import (
 // TheaterHub holds theater rooms
 type TheaterHub struct {
 	upgrader     websocket.Upgrader
-	userHub      *UserHub
 	VideoPlayers cmap.ConcurrentMap
 	cmap.ConcurrentMap
-}
-
-func (hub *TheaterHub) FindRoom(name string) (room Room, err error) {
-	if r, ok := hub.Get(name); ok {
-		return r.(*TheaterRoom), nil
-	}
-	return nil, errors.New("theater room is missing from cmp")
 }
 
 /* If room doesn't exist creates it then returns it */
@@ -31,26 +22,7 @@ func (hub *TheaterHub) GetOrCreateRoom(theater *proto.Theater) (room Room) {
 	if r, ok := hub.Get(theater.Id); ok {
 		return r.(*TheaterRoom)
 	}
-	room, _ = NewTheaterRoom(theater, hub)
-	hub.Set(theater.Id, room)
-	return
-}
-
-/* If room doesn't exist creates it then returns it */
-func (hub *TheaterHub) GetRoom(name string) (*TheaterRoom, error) {
-	if !hub.Has(name) {
-		return nil, errors.New("room not found")
-	}
-	if r, ok := hub.Get(name); ok {
-		return r.(*TheaterRoom), nil
-	}
-	return nil, errors.New("room is missing from cmp")
-}
-
-func (hub *TheaterHub) RemoveRoom(name string) {
-	if hub.Has(name) {
-		hub.Remove(name)
-	}
+	hub.Set(theater.Id, NewTheaterRoom(theater))
 	return
 }
 
@@ -105,10 +77,9 @@ func (hub *TheaterHub) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 /* Constructor */
-func NewTheaterHub(uhub *UserHub) *TheaterHub {
+func NewTheaterHub() *TheaterHub {
 	return &TheaterHub{
 		upgrader:       newUpgrader(),
-		userHub:        uhub,
 		VideoPlayers:   cmap.New(),
 		ConcurrentMap:  cmap.New(),
 	}
