@@ -20,7 +20,7 @@ type ConfMap struct {
 	Secrets struct {
 		Redis struct {
 			MasterName string `yaml:"masterName"`
-			Sentinels []string
+			Sentinels []string `yaml:"sentinels"`
 			Pass string `yaml:"pass"`
 		} `yaml:"redis"`
 		SentryDsn      string `yaml:"sentry_dsn"`
