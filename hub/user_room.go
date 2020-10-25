@@ -9,7 +9,6 @@ import (
 	"github.com/getsentry/sentry-go"
 	redis2 "github.com/go-redis/redis/v8"
 	"github.com/golang/protobuf/ptypes"
-	cmap "github.com/orcaman/concurrent-map"
 	"log"
 	"time"
 
@@ -20,7 +19,6 @@ import (
 /* Has a name, clients, count which holds the actual coutn and index which acts as the unique id */
 type UserRoom struct {
 	name      string
-	friends   cmap.ConcurrentMap
 	session   *Session
 }
 
@@ -34,10 +32,6 @@ func (r *UserRoom) GetName() string {
 
 func (r *UserRoom) GetContext() context.Context {
 	return r.session.c.ctx
-}
-
-func (r *UserRoom) AddFriend(friend *proto.User) {
-	r.friends.Set(friend.Id, friend)
 }
 
 func (r *UserRoom) UpdateState(client *Client, state proto.PERSONAL_STATE) {
@@ -150,77 +144,60 @@ func (r *UserRoom) SendMessage(message *proto.Message) error {
 	return nil
 }
 
-func (r *UserRoom) updateMyActivityOnFriendsList(psme *proto.PersonalActivityMsgEvent) {
-	r.friends.IterCb(func(key string, val interface{}) {
-		friend := val.(*proto.User)
-		buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PERSONAL_ACTIVITY_CHANGED, psme)
-		if err == nil {
-			SendEventToUser(r.GetContext(), buffer.Bytes(), friend)
-		}
-	})
-}
-
-func (r *UserRoom) FeatchFriends() error {
+func (r *UserRoom) FeatchFriends(client *Client) ([]*proto.User, error) {
 	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
 	response, err := grpc.UserServiceClient.GetFriends(mCtx, &proto.AuthenticateRequest{
-		Token: r.session.Token(),
+		Token: client.Token(),
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
-	for _, friend := range response.Result {
-		r.friends.Set(friend.Id, friend)
-	}
-	return nil
+	return response.Result, nil
 }
 
 func (r *UserRoom) FeatchFriendsState(client *Client) error {
-
-	if err := r.FeatchFriends(); err != nil {
+	friends, err := r.FeatchFriends(client)
+	if err != nil {
 		return err
 	}
-
-	r.friends.IterCb(func(key string, v interface{}) {
-		friend, ok := v.(*proto.User)
-		if ok {
-			cmd := redis.Client.HGet(client.ctx, fmt.Sprintf("user:%s", friend.Id), "state")
-			if err := cmd.Err(); err != nil {
-				sentry.CaptureException(fmt.Errorf("could not get friend from redis: %v", err))
-				return
-			}
-			activityCmd := redis.Client.HGet(client.ctx, fmt.Sprintf("user:%s", friend.Id), "activity")
-			if err := activityCmd.Err(); err != nil {
-				if err != redis2.Nil {
-					log.Println(err)
-					sentry.CaptureException(fmt.Errorf("could not get friend's activuty from redis: %v", err))
-					return
-				}
-			}
-			if sState := cmd.Val(); sState != proto.PERSONAL_STATE_OFFLINE.String() {
-				var (
-					activity = new(proto.Activity)
-					state    = proto.PERSONAL_STATE(proto.PERSONAL_STATE_value[sState])
-					psm      = &proto.PersonalStateMsgEvent{
-						User: friend,
-						State: state,
-					}
-				)
-
-				redisActivity := activityCmd.Val()
-				if redisActivity != "" {
-					err := json.Unmarshal([]byte(redisActivity), activity)
-					if err == nil {
-						psm.Activity = activity
-					}
-				}
-
-				buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PERSONAL_STATE_CHANGED, psm)
-				if err == nil {
-					SendEventToUser(client.ctx, buffer.Bytes(), client.GetUser())
-				}
+	for _, friend := range friends {
+		cmd := redis.Client.HGet(client.ctx, fmt.Sprintf("user:%s", friend.Id), "state")
+		if err := cmd.Err(); err != nil {
+			sentry.CaptureException(fmt.Errorf("could not get friend from redis: %v", err))
+			continue
+		}
+		activityCmd := redis.Client.HGet(client.ctx, fmt.Sprintf("user:%s", friend.Id), "activity")
+		if err := activityCmd.Err(); err != nil {
+			if err != redis2.Nil {
+				log.Println(err)
+				sentry.CaptureException(fmt.Errorf("could not get friend's activuty from redis: %v", err))
+				continue
 			}
 		}
-	})
+		if sState := cmd.Val(); sState != proto.PERSONAL_STATE_OFFLINE.String() {
+			var (
+				activity = new(proto.Activity)
+				state    = proto.PERSONAL_STATE(proto.PERSONAL_STATE_value[sState])
+				psm      = &proto.PersonalStateMsgEvent{
+					User: friend,
+					State: state,
+				}
+			)
+
+			redisActivity := activityCmd.Val()
+			if redisActivity != "" {
+				err := json.Unmarshal([]byte(redisActivity), activity)
+				if err == nil {
+					psm.Activity = activity
+				}
+			}
+
+			buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PERSONAL_STATE_CHANGED, psm)
+			if err == nil {
+				SendEventToUser(client.ctx, buffer.Bytes(), client.GetUser())
+			}
+		}
+	}
 	return nil
 }
 
@@ -245,7 +222,6 @@ func (r *UserRoom) HandleEvents(client *Client) error {
 							log.Println(err)
 							continue
 						}
-						r.AddFriend(protoMessage.Friend)
 					}
 
 				// when user sending a new message
@@ -288,8 +264,5 @@ func (r *UserRoom) HandleEvents(client *Client) error {
 
 /* Constructor */
 func NewUserRoom(name string) (room *UserRoom) {
-	return &UserRoom{
-		name:    name,
-		friends: cmap.New(),
-	}
+	return &UserRoom{name: name}
 }

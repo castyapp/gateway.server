@@ -40,6 +40,14 @@ func (room *TheaterRoom) Join(client *Client) {
 			redis.Client.SAdd(client.ctx, clientsKey, client.Id)
 		}
 
+		// Store theater members
+		//
+		//membersKey := fmt.Sprintf("theater:members:%s", room.theater.Id)
+		//memberExists := redis.Client.SIsMember(client.ctx, membersKey, client.Id)
+		//if !memberExists.Val() {
+		//	redis.Client.SAdd(client.ctx, membersKey, client.GetUser().Id)
+		//}
+
 		// Get current client's user object
 		mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
 		response, err := grpc.UserServiceClient.GetUser(mCtx, &proto.AuthenticateRequest{
@@ -52,12 +60,10 @@ func (room *TheaterRoom) Join(client *Client) {
 
 		// check if user has default state
 		// if it has, then do nothing with state
-		if response.Result.State != proto.PERSONAL_STATE_ONLINE {
-			if response.Result.Activity.Id != room.theater.Id {
-				// Update user's activity to this theater
-				if err := room.updateUserActivity(client); err != nil {
-					sentry.CaptureException(err)
-				}
+		if response.Result.State == proto.PERSONAL_STATE_ONLINE {
+			// Update user's activity to this theater
+			if err := room.updateUserActivity(client); err != nil {
+				sentry.CaptureException(err)
 			}
 		}
 	}
@@ -250,7 +256,7 @@ func (room *TheaterRoom) HandleEvents(client *Client) error {
 						chatMessage := new(proto.ChatMsgEvent)
 						if err := event.ReadProtoMsg(chatMessage); err == nil {
 							chatMessage.User = client.GetUser()
-							event, err := protocol.NewMsgProtobuf(proto.EMSG_NEW_CHAT_MESSAGE, chatMessage)
+							event, err := protocol.NewMsgProtobuf(proto.EMSG_CHAT_MESSAGES, chatMessage)
 							if err == nil {
 								room.SendEventToTheaterMembers(client.ctx, event.Bytes())
 							}
