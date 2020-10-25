@@ -74,7 +74,7 @@ func (room *TheaterRoom) Join(client *Client) {
 		log.Printf("User [%s] Theater[%s]", client.GetUser().Id, room.theater.Id)
 	}
 
-	go room.SubscribeEvents(client)
+	room.SubscribeEvents(client)
 
 	_ = client.send(proto.EMSG_AUTHORIZED, nil)
 
@@ -87,30 +87,38 @@ func (room *TheaterRoom) Join(client *Client) {
 }
 
 func (room *TheaterRoom) SubscribeEvents(client *Client) {
-	mCtx, _ := context.WithTimeout(client.ctx, 10 *time.Second)
 	channel := fmt.Sprintf("theater:events:%s", room.theater.Id)
-	sub := redis.Client.Subscribe(mCtx, channel)
-	for {
-		select {
-		case <-client.ctx.Done():
-			if err := sub.Unsubscribe(mCtx, channel); err != nil {
+	pubsub := redis.Client.Subscribe(context.Background(), channel)
+	go func() {
+		for {
+			select {
+			case <-client.ctx.Done():
+				if err := pubsub.Close(); err != nil {
+					sentry.CaptureException(err)
+				}
+				return
+			}
+		}
+	}()
+	go func() {
+		defer func() {
+			if err := pubsub.Close(); err != nil {
 				sentry.CaptureException(err)
 			}
-			return
-		case event := <-sub.Channel():
+		}()
+		for event := range pubsub.Channel() {
 			if err := client.WriteMessage([]byte(event.Payload)); err != nil {
 				sentry.CaptureException(err)
 				continue
 			}
 		}
-	}
+	}()
 }
 
 // updae user's activity to watching this theater
 func (room *TheaterRoom) updateUserActivity(client *Client) error {
 
-	mCtx, cancel := context.WithTimeout(client.ctx, time.Second * 10)
-	defer cancel()
+	mCtx := context.Background()
 
 	if room.theater.MediaSource != nil {
 		if !client.IsGuest() {
@@ -140,10 +148,10 @@ func (room *TheaterRoom) updateUserActivity(client *Client) error {
 
 // Remove user's activity
 func (room *TheaterRoom) removeUserActivity(client *Client) error {
-	mCtx, cancel := context.WithTimeout(client.ctx, time.Second * 10)
-	defer cancel()
 	if !client.IsGuest() {
-		_, err := grpc.UserServiceClient.RemoveActivity(mCtx, &proto.AuthenticateRequest{Token: client.Token()})
+		_, err := grpc.UserServiceClient.RemoveActivity(context.Background(), &proto.AuthenticateRequest{
+			Token: client.Token(),
+		})
 		if err != nil {
 			return err
 		}
@@ -153,13 +161,14 @@ func (room *TheaterRoom) removeUserActivity(client *Client) error {
 
 /* Removes client from room */
 func (room *TheaterRoom) Leave(client *Client) {
+	mCtx := context.Background()
 	if !client.IsGuest() {
 		// Remove user's activity
 		_ = room.removeUserActivity(client)
 	}
 	clientsKey := fmt.Sprintf("theater:clients:%s", room.theater.Id)
-	redis.Client.SRem(client.ctx, clientsKey, client.Id)
-	clients := redis.Client.SMembers(client.ctx, clientsKey)
+	redis.Client.SRem(mCtx, clientsKey, client.Id)
+	clients := redis.Client.SMembers(mCtx, clientsKey)
 	if len(clients.Val()) == 0 {
 		room.vp.Pause()
 	}
@@ -220,6 +229,7 @@ func (room *TheaterRoom) HandleEvents(client *Client) error {
 				// when theater play requested
 				case proto.EMSG_THEATER_PLAY:
 					if client.IsAuthenticated() {
+						mCtx := context.Background()
 						theaterVideoPlayer := new(proto.TheaterVideoPlayer)
 						if err := event.ReadProtoMsg(theaterVideoPlayer); err == nil {
 
@@ -232,7 +242,7 @@ func (room *TheaterRoom) HandleEvents(client *Client) error {
 
 							event, err := protocol.NewMsgProtobuf(proto.EMSG_THEATER_PLAY, theaterVideoPlayer)
 							if err == nil {
-								room.SendEventToTheaterMembers(client.ctx, event.Bytes())
+								room.SendEventToTheaterMembers(mCtx, event.Bytes())
 							}
 						}
 					}
@@ -241,6 +251,7 @@ func (room *TheaterRoom) HandleEvents(client *Client) error {
 				// when theater pause requested
 				case proto.EMSG_THEATER_PAUSE:
 					if client.IsAuthenticated() {
+						mCtx := context.Background()
 						theaterVideoPlayer := new(proto.TheaterVideoPlayer)
 						if err := event.ReadProtoMsg(theaterVideoPlayer); err == nil {
 
@@ -251,7 +262,7 @@ func (room *TheaterRoom) HandleEvents(client *Client) error {
 
 							event, err := protocol.NewMsgProtobuf(proto.EMSG_THEATER_PAUSE, theaterVideoPlayer)
 							if err == nil {
-								room.SendEventToTheaterMembers(client.ctx, event.Bytes())
+								room.SendEventToTheaterMembers(mCtx, event.Bytes())
 							}
 						}
 					}
@@ -260,12 +271,13 @@ func (room *TheaterRoom) HandleEvents(client *Client) error {
 				// when new message chat recieved
 				case proto.EMSG_NEW_CHAT_MESSAGE:
 					if client.IsAuthenticated() {
+						mCtx := context.Background()
 						chatMessage := new(proto.ChatMsgEvent)
 						if err := event.ReadProtoMsg(chatMessage); err == nil {
 							chatMessage.User = client.GetUser()
 							event, err := protocol.NewMsgProtobuf(proto.EMSG_CHAT_MESSAGES, chatMessage)
 							if err == nil {
-								room.SendEventToTheaterMembers(client.ctx, event.Bytes())
+								room.SendEventToTheaterMembers(mCtx, event.Bytes())
 							}
 						}
 					}
@@ -286,7 +298,8 @@ func GetTheater(theaterId, token []byte) (*proto.Theater, error) {
 			Token: token,
 		}
 	}
-	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+	mCtx, cancel := context.WithTimeout(context.Background(), 10 * time.Second)
+	defer cancel()
 	response, err := grpc.TheaterServiceClient.GetTheater(mCtx, req)
 	if err != nil {
 		return nil, err

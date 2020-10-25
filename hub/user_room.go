@@ -35,9 +35,7 @@ func (r *UserRoom) GetContext() context.Context {
 
 func (r *UserRoom) UpdateState(client *Client, state proto.PERSONAL_STATE) {
 	if !client.IsGuest() {
-		mCtx, cancel := context.WithTimeout(client.ctx, time.Second * 10)
-		defer cancel()
-		_, err := grpc.UserServiceClient.UpdateState(mCtx, &proto.UpdateStateRequest{
+		_, err := grpc.UserServiceClient.UpdateState(context.Background(), &proto.UpdateStateRequest{
 			State: state,
 			AuthRequest: &proto.AuthenticateRequest{Token: client.Token()},
 		})
@@ -49,7 +47,7 @@ func (r *UserRoom) UpdateState(client *Client, state proto.PERSONAL_STATE) {
 
 func (r *UserRoom) SubscribeEvents(client *Client) {
 	if !client.IsGuest() {
-		mCtx, _ := context.WithTimeout(client.ctx, 10 * time.Second)
+		mCtx := context.Background()
 		channel := fmt.Sprintf("user:events:%s", client.GetUser().Id)
 		sub := redis.Client.Subscribe(mCtx, channel)
 		for {
