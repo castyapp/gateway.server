@@ -2,7 +2,6 @@ package hub
 
 import (
 	"github.com/CastyLab/grpc.proto/proto"
-	"github.com/getsentry/sentry-go"
 	"github.com/gobwas/ws"
 	"github.com/gorilla/websocket"
 	cmap "github.com/orcaman/concurrent-map"
