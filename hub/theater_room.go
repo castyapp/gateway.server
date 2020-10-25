@@ -34,10 +34,11 @@ func (room *TheaterRoom) Join(client *Client) {
 
 	if !client.IsGuest() {
 
+		ctx := context.Background()
 		clientsKey := fmt.Sprintf("theater:clients:%s", room.theater.Id)
-		exists := redis.Client.SIsMember(client.ctx, clientsKey, client.Id)
+		exists := redis.Client.SIsMember(ctx, clientsKey, client.Id)
 		if !exists.Val() {
-			redis.Client.SAdd(client.ctx, clientsKey, client.Id)
+			redis.Client.SAdd(ctx, clientsKey, client.Id)
 		}
 
 		// Store theater members
@@ -49,8 +50,7 @@ func (room *TheaterRoom) Join(client *Client) {
 		//}
 
 		// Get current client's user object
-		mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
-		response, err := grpc.UserServiceClient.GetUser(mCtx, &proto.AuthenticateRequest{
+		response, err := grpc.UserServiceClient.GetUser(client.ctx, &proto.AuthenticateRequest{
 			Token: client.Token(),
 		})
 		if err != nil {
@@ -88,27 +88,12 @@ func (room *TheaterRoom) Join(client *Client) {
 
 func (room *TheaterRoom) SubscribeEvents(client *Client) {
 	channel := fmt.Sprintf("theater:events:%s", room.theater.Id)
-	pubsub := redis.Client.Subscribe(context.Background(), channel)
+	pubsub := redis.Client.Subscribe(client.ctx, channel)
 	go func() {
-		for {
-			select {
-			case <-client.ctx.Done():
-				if err := pubsub.Close(); err != nil {
-					sentry.CaptureException(err)
-				}
-				return
-			}
-		}
-	}()
-	go func() {
-		defer func() {
-			if err := pubsub.Close(); err != nil {
-				sentry.CaptureException(err)
-			}
-		}()
+		defer pubsub.Close()
 		for event := range pubsub.Channel() {
 			if err := client.WriteMessage([]byte(event.Payload)); err != nil {
-				sentry.CaptureException(err)
+				log.Println(fmt.Errorf("could not write message to user's theater client REASON[%v]", err))
 				continue
 			}
 		}

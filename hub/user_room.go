@@ -47,23 +47,17 @@ func (r *UserRoom) UpdateState(client *Client, state proto.PERSONAL_STATE) {
 
 func (r *UserRoom) SubscribeEvents(client *Client) {
 	if !client.IsGuest() {
-		mCtx := context.Background()
 		channel := fmt.Sprintf("user:events:%s", client.GetUser().Id)
-		sub := redis.Client.Subscribe(mCtx, channel)
-		for {
-			select {
-			case <-client.ctx.Done():
-				if err := sub.Unsubscribe(mCtx, channel); err != nil {
-					sentry.CaptureException(err)
-				}
-				return
-			case event := <-sub.Channel():
+		pubsub := redis.Client.Subscribe(client.ctx, channel)
+		go func() {
+			defer pubsub.Close()
+			for event := range pubsub.Channel() {
 				if err := client.WriteMessage([]byte(event.Payload)); err != nil {
-					sentry.CaptureException(err)
+					log.Println(fmt.Errorf("could not write message to user client REASON[%v]", err))
 					continue
 				}
 			}
-		}
+		}()
 	}
 }
 
@@ -78,18 +72,15 @@ func (r *UserRoom) Join(client *Client) {
 		if !exists.Val() {
 			redis.Client.SAdd(client.ctx, uClientsKey, client.Id)
 		}
-		clients := redis.Client.SMembers(client.ctx, uClientsKey).Val()
 
 		if err := r.FeatchFriendsState(client); err != nil {
 			sentry.CaptureException(fmt.Errorf("could not GetAndFeatchFriendsState : %v", err))
 		}
 
-		if len(clients) == 1 {
-			r.UpdateState(client, proto.PERSONAL_STATE_ONLINE)
-		}
+		r.UpdateState(client, proto.PERSONAL_STATE_ONLINE)
 
 		// subscribe to user's events on redis
-		go r.SubscribeEvents(client)
+		r.SubscribeEvents(client)
 	}
 
 	if err := protocol.BrodcastMsgProtobuf(client.conn, proto.EMSG_AUTHORIZED, nil); err != nil {
@@ -99,9 +90,10 @@ func (r *UserRoom) Join(client *Client) {
 }
 
 func (r *UserRoom) Leave(client *Client) {
+	ctx := context.Background()
 	uClientsKey := fmt.Sprintf("user:clients:%s", client.GetUser().Id)
-	redis.Client.SRem(client.ctx, uClientsKey, client.Id)
-	clients := redis.Client.SMembers(client.ctx, uClientsKey).Val()
+	redis.Client.SRem(ctx, uClientsKey, client.Id)
+	clients := redis.Client.SMembers(ctx, uClientsKey).Val()
 	if len(clients) == 0 {
 		r.UpdateState(client, proto.PERSONAL_STATE_OFFLINE)
 	}
