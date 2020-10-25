@@ -6,7 +6,6 @@ import (
 	"github.com/CastyLab/gateway.server/grpc"
 	"github.com/CastyLab/gateway.server/redis"
 	"github.com/CastyLab/grpc.proto/proto"
-	"github.com/getsentry/sentry-go"
 	"github.com/gobwas/ws"
 	"github.com/gorilla/websocket"
 	cmap "github.com/orcaman/concurrent-map"
@@ -54,7 +53,6 @@ func (hub *UserHub) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// Upgrade connection to websocket
 	conn, _, _, err := ws.UpgradeHTTP(req, w)
 	if err != nil {
-		sentry.CaptureException(err)
 		return
 	}
 

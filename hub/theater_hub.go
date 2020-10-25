@@ -27,7 +27,6 @@ func (hub *TheaterHub) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// Upgrade connection to websocket
 	conn, _, _, err := ws.UpgradeHTTP(req, w)
 	if err != nil {
-		sentry.CaptureException(err)
 		return
 	}
 

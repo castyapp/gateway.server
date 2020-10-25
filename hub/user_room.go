@@ -7,7 +7,6 @@ import (
 	"github.com/CastyLab/gateway.server/redis"
 	"github.com/CastyLab/grpc.proto/protocol"
 	"github.com/getsentry/sentry-go"
-	redis2 "github.com/go-redis/redis/v8"
 	"github.com/golang/protobuf/ptypes"
 	"log"
 	"time"
@@ -36,40 +35,30 @@ func (r *UserRoom) GetContext() context.Context {
 
 func (r *UserRoom) UpdateState(client *Client, state proto.PERSONAL_STATE) {
 	if !client.IsGuest() {
-
 		mCtx, cancel := context.WithTimeout(client.ctx, time.Second * 10)
 		defer cancel()
-
 		_, err := grpc.UserServiceClient.UpdateState(mCtx, &proto.UpdateStateRequest{
 			State: state,
-			AuthRequest: &proto.AuthenticateRequest{
-				Token: client.Token(),
-			},
+			AuthRequest: &proto.AuthenticateRequest{Token: client.Token()},
 		})
-
-		if err == nil {
-			hKey := fmt.Sprintf("user:%s", client.GetUser().Id)
-			switch state {
-			case proto.PERSONAL_STATE_ONLINE:
-				cmd := redis.Client.HSet(mCtx, hKey, "state", state.String())
-				if err := cmd.Err(); err != nil {
-					sentry.CaptureException(err)
-				}
-			case proto.PERSONAL_STATE_OFFLINE:
-				cmd := redis.Client.HDel(mCtx, hKey, "state")
-				if err := cmd.Err(); err != nil {
-					sentry.CaptureException(err)
-				}
-			}
+		if err != nil {
+			sentry.CaptureException(err)
 		}
 	}
 }
 
 func (r *UserRoom) SubscribeEvents(client *Client) {
 	if !client.IsGuest() {
-		sub := redis.Client.Subscribe(client.ctx, fmt.Sprintf("user:events:%s", client.GetUser().Id))
+		mCtx, _ := context.WithTimeout(client.ctx, 10 * time.Second)
+		channel := fmt.Sprintf("user:events:%s", client.GetUser().Id)
+		sub := redis.Client.Subscribe(mCtx, channel)
 		for {
 			select {
+			case <-client.ctx.Done():
+				if err := sub.Unsubscribe(mCtx, channel); err != nil {
+					sentry.CaptureException(err)
+				}
+				return
 			case event := <-sub.Channel():
 				if err := client.WriteMessage([]byte(event.Payload)); err != nil {
 					sentry.CaptureException(err)
@@ -161,37 +150,11 @@ func (r *UserRoom) FeatchFriendsState(client *Client) error {
 		return err
 	}
 	for _, friend := range friends {
-		cmd := redis.Client.HGet(client.ctx, fmt.Sprintf("user:%s", friend.Id), "state")
-		if err := cmd.Err(); err != nil {
-			sentry.CaptureException(fmt.Errorf("could not get friend from redis: %v", err))
-			continue
-		}
-		activityCmd := redis.Client.HGet(client.ctx, fmt.Sprintf("user:%s", friend.Id), "activity")
-		if err := activityCmd.Err(); err != nil {
-			if err != redis2.Nil {
-				log.Println(err)
-				sentry.CaptureException(fmt.Errorf("could not get friend's activuty from redis: %v", err))
-				continue
+		if friend.State != proto.PERSONAL_STATE_OFFLINE && friend.State != proto.PERSONAL_STATE_INVISIBLE {
+			psm := &proto.PersonalStateMsgEvent{
+				User:  friend,
+				State: friend.State,
 			}
-		}
-		if sState := cmd.Val(); sState != proto.PERSONAL_STATE_OFFLINE.String() {
-			var (
-				activity = new(proto.Activity)
-				state    = proto.PERSONAL_STATE(proto.PERSONAL_STATE_value[sState])
-				psm      = &proto.PersonalStateMsgEvent{
-					User: friend,
-					State: state,
-				}
-			)
-
-			redisActivity := activityCmd.Val()
-			if redisActivity != "" {
-				err := json.Unmarshal([]byte(redisActivity), activity)
-				if err == nil {
-					psm.Activity = activity
-				}
-			}
-
 			buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PERSONAL_STATE_CHANGED, psm)
 			if err == nil {
 				SendEventToUser(client.ctx, buffer.Bytes(), client.GetUser())

@@ -87,9 +87,16 @@ func (room *TheaterRoom) Join(client *Client) {
 }
 
 func (room *TheaterRoom) SubscribeEvents(client *Client) {
-	sub := redis.Client.Subscribe(client.ctx, fmt.Sprintf("theater:events:%s", room.theater.Id))
+	mCtx, _ := context.WithTimeout(client.ctx, 10 *time.Second)
+	channel := fmt.Sprintf("theater:events:%s", room.theater.Id)
+	sub := redis.Client.Subscribe(mCtx, channel)
 	for {
 		select {
+		case <-client.ctx.Done():
+			if err := sub.Unsubscribe(mCtx, channel); err != nil {
+				sentry.CaptureException(err)
+			}
+			return
 		case event := <-sub.Channel():
 			if err := client.WriteMessage([]byte(event.Payload)); err != nil {
 				sentry.CaptureException(err)
