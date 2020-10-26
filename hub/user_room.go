@@ -48,13 +48,21 @@ func (room *UserRoom) UpdateState(client *Client, state proto.PERSONAL_STATE) {
 func (room *UserRoom) SubscribeEvents(client *Client) {
 	if !client.IsGuest() {
 		channel := fmt.Sprintf("user:events:%s", client.GetUser().Id)
-		pubsub := redis.Client.Subscribe(client.ctx, channel)
+		pubsub := redis.Client.Subscribe(context.Background(), channel)
 		go func() {
-			defer pubsub.Close()
-			for event := range pubsub.Channel() {
-				if err := client.WriteMessage([]byte(event.Payload)); err != nil {
-					log.Println(fmt.Errorf("could not write message to user client REASON[%v]", err))
-					continue
+			for {
+				select {
+				case <-client.ctx.Done():
+					if err := pubsub.Unsubscribe(context.Background(), channel); err != nil {
+						log.Println(fmt.Errorf("could not unsubscribe user from its redis events REASON[%v]", err))
+					}
+					pubsub.Close() // close redis pubsub for user
+					return
+				case event := <-pubsub.Channel():
+					if err := client.WriteMessage([]byte(event.Payload)); err != nil {
+						log.Println(fmt.Errorf("could not write message to user client REASON[%v]", err))
+						continue
+					}
 				}
 			}
 		}()
