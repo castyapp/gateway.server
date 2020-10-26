@@ -2,7 +2,6 @@ package hub
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"github.com/CastyLab/gateway.server/redis"
 	"github.com/CastyLab/grpc.proto/protocol"
@@ -98,30 +97,6 @@ func (room *UserRoom) Leave(client *Client) {
 	}
 }
 
-func (room *UserRoom) SendMessage(message *proto.Message) error {
-
-	from, err := json.Marshal(message.Sender)
-	if err != nil {
-		return err
-	}
-
-	createdAt, _ := ptypes.TimestampProto(time.Now())
-
-	entry := &proto.ChatMsgEvent{
-		Message:   []byte(message.Content),
-		From:      string(from),
-		CreatedAt: createdAt,
-	}
-
-	buffer, err := protocol.NewMsgProtobuf(proto.EMSG_CHAT_MESSAGES, entry)
-	if err != nil {
-		return err
-	}
-
-	SendEventToUser(context.Background(), buffer.Bytes(), message.Reciever)
-	return nil
-}
-
 func (room *UserRoom) FeatchFriends(client *Client) ([]*proto.User, error) {
 	response, err := grpc.UserServiceClient.GetFriends(client.ctx, &proto.AuthenticateRequest{
 		Token: client.Token(),
@@ -189,24 +164,17 @@ func (room *UserRoom) HandleEvents(client *Client) error {
 						chatMessage.CreatedAt = ptypes.TimestampNow()
 
 						mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
-						response, err := grpc.MessagesServiceClient.CreateMessage(mCtx, &proto.CreateMessageRequest{
+						_, err := grpc.MessagesServiceClient.CreateMessage(mCtx, &proto.CreateMessageRequest{
 							RecieverId: chatMessage.To,
 							Content:    string(chatMessage.Message),
 							AuthRequest: &proto.AuthenticateRequest{
 								Token: client.Token(),
 							},
 						})
-
 						if err != nil {
 							log.Println(err)
 							continue
 						}
-
-						if err = room.SendMessage(response.Result); err != nil {
-							log.Println(err)
-							continue
-						}
-
 					}
 				}
 			}
