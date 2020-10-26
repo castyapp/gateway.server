@@ -17,8 +17,9 @@ import (
 
 /* Has a name, clients, count which holds the actual coutn and index which acts as the unique id */
 type UserRoom struct {
-	name      string
-	session   *Session
+	hub      *UserHub
+	name     string
+	session  *Session
 }
 
 func (r *UserRoom) GetType() RoomType {
@@ -69,12 +70,7 @@ func (r *UserRoom) Join(client *Client) {
 
 		// subscribe to user's events on redis
 		r.SubscribeEvents(client)
-
-		uClientsKey := fmt.Sprintf("user:clients:%s", client.GetUser().Id)
-		exists := redis.Client.SIsMember(client.ctx, uClientsKey, client.Id)
-		if !exists.Val() {
-			redis.Client.SAdd(client.ctx, uClientsKey, client.Id)
-		}
+		r.hub.addClientToRoom(client)
 
 		if err := r.FeatchFriendsState(client); err != nil {
 			sentry.CaptureException(fmt.Errorf("could not GetAndFeatchFriendsState : %v", err))
@@ -90,11 +86,13 @@ func (r *UserRoom) Join(client *Client) {
 }
 
 func (r *UserRoom) Leave(client *Client) {
-	ctx := context.Background()
-	uClientsKey := fmt.Sprintf("user:clients:%s", client.GetUser().Id)
-	redis.Client.SRem(ctx, uClientsKey, client.Id)
-	clients := redis.Client.SMembers(ctx, uClientsKey).Val()
-	if len(clients) == 0 {
+
+	// removing client from redis and User's ConccurentMap
+	r.hub.removeClientFromRoom(client)
+
+	key := fmt.Sprintf("user:clients:%s", client.GetUser().Id)
+	if clients := redis.Client.SMembers(context.Background(), key).Val(); len(clients) == 0 {
+		// Set a OFFLINE state for user if there's no client left
 		r.UpdateState(client, proto.PERSONAL_STATE_OFFLINE)
 	}
 }
@@ -216,6 +214,6 @@ func (r *UserRoom) HandleEvents(client *Client) error {
 }
 
 /* Constructor */
-func NewUserRoom(name string) (room *UserRoom) {
-	return &UserRoom{name: name}
+func NewUserRoom(hub *UserHub, name string) (room *UserRoom) {
+	return &UserRoom{hub: hub, name: name}
 }

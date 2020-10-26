@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"github.com/CastyLab/gateway.server/config"
@@ -111,12 +110,6 @@ func main() {
 		if ok := sentry.Flush(time.Second * 5); !ok {
 			sentry.CaptureMessage("could not Flush sentry")
 			log.Println("could not Flush sentry")
-		}
-
-		if err := redis.Client.FlushAllAsync(context.Background()).Err(); err != nil {
-			mErr := fmt.Errorf("could not flushall async Redis: %v", err)
-			sentry.CaptureException(mErr)
-			log.Println(mErr)
 		}
 
 		// Close redis

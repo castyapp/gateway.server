@@ -15,6 +15,7 @@ import (
 )
 
 type TheaterRoom struct {
+	hub *TheaterHub
 	// authorized theater
 	theater *proto.Theater
 	// Video player configures
@@ -26,7 +27,7 @@ func (room *TheaterRoom) GetType() RoomType {
 }
 
 func (room *TheaterRoom) GetName() string {
-	return room.theater.MediaSource.Title
+	return room.theater.Id
 }
 
 // Join a client to room
@@ -35,13 +36,7 @@ func (room *TheaterRoom) Join(client *Client) {
 	if !client.IsGuest() {
 
 		room.SubscribeEvents(client)
-
-		ctx := context.Background()
-		clientsKey := fmt.Sprintf("theater:clients:%s", room.theater.Id)
-		exists := redis.Client.SIsMember(ctx, clientsKey, client.Id)
-		if !exists.Val() {
-			redis.Client.SAdd(ctx, clientsKey, client.Id)
-		}
+		room.hub.addClientToRoom(client)
 
 		// Store theater members
 		//
@@ -84,6 +79,25 @@ func (room *TheaterRoom) Join(client *Client) {
 	//})
 
 	return
+}
+
+/* Removes client from room */
+func (room *TheaterRoom) Leave(client *Client) {
+	if !client.IsGuest() {
+		// Remove user's activity
+		_ = room.removeUserActivity(client)
+	}
+
+	// removing client from redis and Theater's ConcurrentMap
+	room.hub.removeClientFromRoom(client)
+
+	key := fmt.Sprintf("theater:clients:%s", client.room.GetName())
+	clients := redis.Client.SMembers(context.Background(), key)
+	if len(clients.Val()) == 0 {
+		// pause VideoPlayer when there's no clients
+		room.vp.Pause()
+	}
+
 }
 
 func (room *TheaterRoom) SubscribeEvents(client *Client) {
@@ -142,21 +156,6 @@ func (room *TheaterRoom) removeUserActivity(client *Client) error {
 		}
 	}
 	return nil
-}
-
-/* Removes client from room */
-func (room *TheaterRoom) Leave(client *Client) {
-	mCtx := context.Background()
-	if !client.IsGuest() {
-		// Remove user's activity
-		_ = room.removeUserActivity(client)
-	}
-	clientsKey := fmt.Sprintf("theater:clients:%s", room.theater.Id)
-	redis.Client.SRem(mCtx, clientsKey, client.Id)
-	clients := redis.Client.SMembers(mCtx, clientsKey)
-	if len(clients.Val()) == 0 {
-		room.vp.Pause()
-	}
 }
 
 func (room *TheaterRoom) Sync(client *Client) {
@@ -296,8 +295,9 @@ func GetTheater(theaterId, token []byte) (*proto.Theater, error) {
 }
 
 // create a new theater room
-func NewTheaterRoom(theater *proto.Theater) *TheaterRoom {
+func NewTheaterRoom(hub *TheaterHub, theater *proto.Theater) *TheaterRoom {
 	return &TheaterRoom{
+		hub:     hub,
 		theater: theater,
 		vp:      NewVideoPlayer(),
 	}
