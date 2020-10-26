@@ -67,6 +67,9 @@ func (r *UserRoom) Join(client *Client) {
 
 	if !client.IsGuest() {
 
+		// subscribe to user's events on redis
+		r.SubscribeEvents(client)
+
 		uClientsKey := fmt.Sprintf("user:clients:%s", client.GetUser().Id)
 		exists := redis.Client.SIsMember(client.ctx, uClientsKey, client.Id)
 		if !exists.Val() {
@@ -78,9 +81,6 @@ func (r *UserRoom) Join(client *Client) {
 		}
 
 		r.UpdateState(client, proto.PERSONAL_STATE_ONLINE)
-
-		// subscribe to user's events on redis
-		r.SubscribeEvents(client)
 	}
 
 	if err := protocol.BrodcastMsgProtobuf(client.conn, proto.EMSG_AUTHORIZED, nil); err != nil {
@@ -119,13 +119,12 @@ func (r *UserRoom) SendMessage(message *proto.Message) error {
 		return err
 	}
 
-	SendEventToUser(r.GetContext(), buffer.Bytes(), message.Reciever)
+	SendEventToUser(context.Background(), buffer.Bytes(), message.Reciever)
 	return nil
 }
 
 func (r *UserRoom) FeatchFriends(client *Client) ([]*proto.User, error) {
-	mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
-	response, err := grpc.UserServiceClient.GetFriends(mCtx, &proto.AuthenticateRequest{
+	response, err := grpc.UserServiceClient.GetFriends(client.ctx, &proto.AuthenticateRequest{
 		Token: client.Token(),
 	})
 	if err != nil {
@@ -146,9 +145,10 @@ func (r *UserRoom) FeatchFriendsState(client *Client) error {
 				State: friend.State,
 			}
 			buffer, err := protocol.NewMsgProtobuf(proto.EMSG_PERSONAL_STATE_CHANGED, psm)
-			if err == nil {
-				SendEventToUser(client.ctx, buffer.Bytes(), client.GetUser())
+			if err != nil {
+				return err
 			}
+			SendEventToUser(client.ctx, buffer.Bytes(), client.GetUser())
 		}
 	}
 	return nil

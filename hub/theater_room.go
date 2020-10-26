@@ -34,6 +34,8 @@ func (room *TheaterRoom) Join(client *Client) {
 
 	if !client.IsGuest() {
 
+		room.SubscribeEvents(client)
+
 		ctx := context.Background()
 		clientsKey := fmt.Sprintf("theater:clients:%s", room.theater.Id)
 		exists := redis.Client.SIsMember(ctx, clientsKey, client.Id)
@@ -73,8 +75,6 @@ func (room *TheaterRoom) Join(client *Client) {
 	} else {
 		log.Printf("User [%s] Theater[%s]", client.GetUser().Id, room.theater.Id)
 	}
-
-	room.SubscribeEvents(client)
 
 	_ = client.send(proto.EMSG_AUTHORIZED, nil)
 
