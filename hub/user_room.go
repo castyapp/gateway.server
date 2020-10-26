@@ -22,19 +22,19 @@ type UserRoom struct {
 	session  *Session
 }
 
-func (r *UserRoom) GetType() RoomType {
+func (room *UserRoom) GetType() RoomType {
 	return UserRoomType
 }
 
-func (r *UserRoom) GetName() string {
-	return r.name
+func (room *UserRoom) GetName() string {
+	return room.name
 }
 
-func (r *UserRoom) GetContext() context.Context {
-	return r.session.c.ctx
+func (room *UserRoom) GetContext() context.Context {
+	return room.session.c.ctx
 }
 
-func (r *UserRoom) UpdateState(client *Client, state proto.PERSONAL_STATE) {
+func (room *UserRoom) UpdateState(client *Client, state proto.PERSONAL_STATE) {
 	if !client.IsGuest() {
 		_, err := grpc.UserServiceClient.UpdateState(context.Background(), &proto.UpdateStateRequest{
 			State: state,
@@ -46,7 +46,7 @@ func (r *UserRoom) UpdateState(client *Client, state proto.PERSONAL_STATE) {
 	}
 }
 
-func (r *UserRoom) SubscribeEvents(client *Client) {
+func (room *UserRoom) SubscribeEvents(client *Client) {
 	if !client.IsGuest() {
 		channel := fmt.Sprintf("user:events:%s", client.GetUser().Id)
 		pubsub := redis.Client.Subscribe(client.ctx, channel)
@@ -62,21 +62,22 @@ func (r *UserRoom) SubscribeEvents(client *Client) {
 	}
 }
 
-func (r *UserRoom) Join(client *Client) {
+func (room *UserRoom) Join(client *Client) {
 
-	r.session = NewSession(client)
+	client.room = room
+	room.session = NewSession(client)
 
 	if !client.IsGuest() {
 
 		// subscribe to user's events on redis
-		r.SubscribeEvents(client)
-		r.hub.addClientToRoom(client)
+		room.SubscribeEvents(client)
+		room.hub.addClientToRoom(client)
 
-		if err := r.FeatchFriendsState(client); err != nil {
+		if err := room.FeatchFriendsState(client); err != nil {
 			sentry.CaptureException(fmt.Errorf("could not GetAndFeatchFriendsState : %v", err))
 		}
 
-		r.UpdateState(client, proto.PERSONAL_STATE_ONLINE)
+		room.UpdateState(client, proto.PERSONAL_STATE_ONLINE)
 	}
 
 	if err := protocol.BrodcastMsgProtobuf(client.conn, proto.EMSG_AUTHORIZED, nil); err != nil {
@@ -85,19 +86,19 @@ func (r *UserRoom) Join(client *Client) {
 	}
 }
 
-func (r *UserRoom) Leave(client *Client) {
+func (room *UserRoom) Leave(client *Client) {
 
 	// removing client from redis and User's ConccurentMap
-	r.hub.removeClientFromRoom(client)
+	room.hub.removeClientFromRoom(client)
 
 	key := fmt.Sprintf("user:clients:%s", client.GetUser().Id)
 	if clients := redis.Client.SMembers(context.Background(), key).Val(); len(clients) == 0 {
 		// Set a OFFLINE state for user if there's no client left
-		r.UpdateState(client, proto.PERSONAL_STATE_OFFLINE)
+		room.UpdateState(client, proto.PERSONAL_STATE_OFFLINE)
 	}
 }
 
-func (r *UserRoom) SendMessage(message *proto.Message) error {
+func (room *UserRoom) SendMessage(message *proto.Message) error {
 
 	from, err := json.Marshal(message.Sender)
 	if err != nil {
@@ -121,7 +122,7 @@ func (r *UserRoom) SendMessage(message *proto.Message) error {
 	return nil
 }
 
-func (r *UserRoom) FeatchFriends(client *Client) ([]*proto.User, error) {
+func (room *UserRoom) FeatchFriends(client *Client) ([]*proto.User, error) {
 	response, err := grpc.UserServiceClient.GetFriends(client.ctx, &proto.AuthenticateRequest{
 		Token: client.Token(),
 	})
@@ -131,8 +132,8 @@ func (r *UserRoom) FeatchFriends(client *Client) ([]*proto.User, error) {
 	return response.Result, nil
 }
 
-func (r *UserRoom) FeatchFriendsState(client *Client) error {
-	friends, err := r.FeatchFriends(client)
+func (room *UserRoom) FeatchFriendsState(client *Client) error {
+	friends, err := room.FeatchFriends(client)
 	if err != nil {
 		return err
 	}
@@ -153,13 +154,13 @@ func (r *UserRoom) FeatchFriendsState(client *Client) error {
 }
 
 /* Handle messages */
-func (r *UserRoom) HandleEvents(client *Client) error {
+func (room *UserRoom) HandleEvents(client *Client) error {
 	for {
 		select {
 
 		// check if context closed
-		case <-r.GetContext().Done():
-			return r.GetContext().Err()
+		case <-room.GetContext().Done():
+			return room.GetContext().Err()
 
 		// on new events
 		case event := <-client.Event:
@@ -201,7 +202,7 @@ func (r *UserRoom) HandleEvents(client *Client) error {
 							continue
 						}
 
-						if err = r.SendMessage(response.Result); err != nil {
+						if err = room.SendMessage(response.Result); err != nil {
 							log.Println(err)
 							continue
 						}

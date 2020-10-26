@@ -34,7 +34,7 @@ func (hub *UserHub) cleanUpClients() {
 func (hub *UserHub) addClientToRoom(client *Client) {
 	hub.clients.SetIfAbsent(client.Id, ClientWithRoom{
 		Id:   client.Id,
-		Room: client.GetUser().Id,
+		Room: client.room.GetName(),
 	})
 	ctx := context.Background()
 	key := fmt.Sprintf("user:clients:%s", client.room.GetName())

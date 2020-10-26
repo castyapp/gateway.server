@@ -33,6 +33,9 @@ func (room *TheaterRoom) GetName() string {
 // Join a client to room
 func (room *TheaterRoom) Join(client *Client) {
 
+	// set current room to client
+	client.room = room
+
 	if !client.IsGuest() {
 
 		room.SubscribeEvents(client)
