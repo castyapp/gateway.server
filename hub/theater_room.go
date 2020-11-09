@@ -49,22 +49,9 @@ func (room *TheaterRoom) Join(client *Client) {
 		//	redis.Client.SAdd(client.ctx, membersKey, client.GetUser().Id)
 		//}
 
-		// Get current client's user object
-		response, err := grpc.UserServiceClient.GetUser(client.ctx, &proto.AuthenticateRequest{
-			Token: client.Token(),
-		})
-		if err != nil {
-			_ = client.conn.Close()
-			return
-		}
-
-		// check if user has default state
-		// if it has, then do nothing with state
-		if response.Result.State == proto.PERSONAL_STATE_ONLINE {
-			// Update user's activity to this theater
-			if err := room.updateUserActivity(client); err != nil {
-				sentry.CaptureException(err)
-			}
+		// Update user's activity to this theater
+		if err := room.updateUserActivity(client); err != nil {
+			sentry.CaptureException(err)
 		}
 	}
 
@@ -119,17 +106,14 @@ func (room *TheaterRoom) SubscribeEvents(client *Client) {
 
 // updae user's activity to watching this theater
 func (room *TheaterRoom) updateUserActivity(client *Client) error {
-
-	mCtx := context.Background()
-
-	if room.theater.MediaSource != nil {
-		if !client.IsGuest() {
-			activity := &proto.Activity{
-				Id:       room.theater.Id,
-				Activity: room.theater.MediaSource.Title,
-			}
+	if !client.IsGuest() {
+		mCtx := context.Background()
+		if room.theater.MediaSource != nil {
 			_, err := grpc.UserServiceClient.UpdateActivity(mCtx, &proto.UpdateActivityRequest{
-				Activity: activity,
+				Activity: &proto.Activity{
+					Id:       room.theater.Id,
+					Activity: room.theater.MediaSource.Title,
+				},
 				AuthRequest: &proto.AuthenticateRequest{
 					Token: client.Token(),
 				},
@@ -137,14 +121,13 @@ func (room *TheaterRoom) updateUserActivity(client *Client) error {
 			if err != nil {
 				return err
 			}
-		}
-	} else {
-		_, err := grpc.UserServiceClient.RemoveActivity(mCtx, &proto.AuthenticateRequest{Token: client.Token()})
-		if err != nil {
-			return err
+		} else {
+			_, err := grpc.UserServiceClient.RemoveActivity(mCtx, &proto.AuthenticateRequest{Token: client.Token()})
+			if err != nil {
+				return err
+			}
 		}
 	}
-
 	return nil
 }
 

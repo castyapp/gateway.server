@@ -2,9 +2,10 @@ package config
 
 import (
 	"fmt"
-	"gopkg.in/yaml.v2"
 	"log"
 	"os"
+
+	"gopkg.in/yaml.v2"
 )
 
 type ConfMap struct {
@@ -19,11 +20,12 @@ type ConfMap struct {
 	} `yaml:"grpc"`
 	Secrets struct {
 		Redis struct {
-			MasterName string    `yaml:"masterName"`
-			Sentinels  []string  `yaml:"sentinels"`
-			Pass       string    `yaml:"pass"`
+			MasterName   string   `yaml:"masterName"`
+			Sentinels    []string `yaml:"sentinels"`
+			Pass         string   `yaml:"pass"`
+			SentinelPass string   `yaml:"sentinel_pass"`
 		} `yaml:"redis"`
-		SentryDsn      string `yaml:"sentry_dsn"`
+		SentryDsn string `yaml:"sentry_dsn"`
 	} `yaml:"secrets"`
 	StoragePath string `yaml:"storage_path"`
 }
