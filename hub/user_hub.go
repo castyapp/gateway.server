@@ -3,10 +3,8 @@ package hub
 import (
 	"context"
 	"fmt"
-	"github.com/CastyLab/gateway.server/grpc"
 	"github.com/CastyLab/gateway.server/redis"
 	"github.com/CastyLab/grpc.proto/proto"
-	"github.com/getsentry/sentry-go"
 	"github.com/gobwas/ws"
 	"github.com/gorilla/websocket"
 	cmap "github.com/orcaman/concurrent-map"
@@ -16,35 +14,45 @@ import (
 
 /* Controls a bunch of rooms */
 type UserHub struct {
+	clients  cmap.ConcurrentMap
 	upgrader websocket.Upgrader
-	cmap.ConcurrentMap
 }
 
 func SendEventToUser(ctx context.Context, event []byte, user *proto.User)  {
 	redis.Client.Publish(ctx, fmt.Sprintf("user:events:%s", user.Id), event)
 }
 
-func SendEventToUserFriends(ctx context.Context, event []byte, client *Client) error {
-	response, err := grpc.UserServiceClient.GetFriends(ctx, &proto.AuthenticateRequest{
-		Token: client.Token(),
+func (hub *UserHub) cleanUpClients() {
+	hub.clients.IterCb(func(key string, c interface{}) {
+		if client, ok := c.(ClientWithRoom); ok {
+			redis.Client.SRem(context.Background(), fmt.Sprintf("user:clients:%s", client.Room), client.Id)
+		}
 	})
-	if err != nil {
-		return err
-	}
-	for _, friend := range response.Result {
-		redis.Client.Publish(ctx, fmt.Sprintf("user:events:%s", friend.Id), event)
-	}
-	return nil
+	log.Println("Removed all clients from UserRooms!")
 }
 
-// remove user's room from concurrent map
-func (hub *UserHub) RemoveRoom(name string) {
-	hub.Remove(name)
-	return
+func (hub *UserHub) addClientToRoom(client *Client) {
+	hub.clients.SetIfAbsent(client.Id, ClientWithRoom{
+		Id:   client.Id,
+		Room: client.room.GetName(),
+	})
+	ctx := context.Background()
+	key := fmt.Sprintf("user:clients:%s", client.room.GetName())
+	if exists := redis.Client.SIsMember(ctx, key, client.Id); !exists.Val() {
+		redis.Client.SAdd(ctx, key, client.Id)
+	}
+}
+
+func (hub *UserHub) removeClientFromRoom(client *Client) {
+	key := fmt.Sprintf("user:clients:%s", client.room.GetName())
+	if err := redis.Client.SRem(context.Background(), key, client.Id).Err(); err == nil {
+		hub.clients.Remove(client.Id)
+	}
 }
 
 // Close user hub
 func (hub *UserHub) Close() error {
+	hub.cleanUpClients()
 	return nil
 }
 
@@ -54,7 +62,6 @@ func (hub *UserHub) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// Upgrade connection to websocket
 	conn, _, _, err := ws.UpgradeHTTP(req, w)
 	if err != nil {
-		sentry.CaptureException(err)
 		return
 	}
 
@@ -68,7 +75,7 @@ func (hub *UserHub) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	// Join user room if client received authorized
 	client.OnAuthorized(func(auth Auth) (room Room) {
-		room = NewUserRoom(auth.User().Id)
+		room = NewUserRoom(hub, auth.User().Id)
 		room.Join(client)
 		return
 	})
@@ -80,7 +87,7 @@ func (hub *UserHub) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // Create a new userhub
 func NewUserHub() *UserHub {
 	return &UserHub{
-		ConcurrentMap: cmap.New(),
-		upgrader:      newUpgrader(),
+		clients:  cmap.New(),
+		upgrader: newUpgrader(),
 	}
 }

@@ -1,8 +1,10 @@
 package hub
 
 import (
+	"context"
+	"fmt"
+	"github.com/CastyLab/gateway.server/redis"
 	"github.com/CastyLab/grpc.proto/proto"
-	"github.com/getsentry/sentry-go"
 	"github.com/gobwas/ws"
 	"github.com/gorilla/websocket"
 	cmap "github.com/orcaman/concurrent-map"
@@ -14,10 +16,40 @@ import (
 type TheaterHub struct {
 	upgrader     websocket.Upgrader
 	VideoPlayers cmap.ConcurrentMap
-	cmap.ConcurrentMap
+	clients      cmap.ConcurrentMap
+}
+
+func (hub *TheaterHub) cleanUpClients() {
+	hub.clients.IterCb(func(key string, c interface{}) {
+		if client, ok := c.(ClientWithRoom); ok {
+			redis.Client.SRem(context.Background(), fmt.Sprintf("theater:clients:%s", client.Room), client.Id)
+		}
+	})
+	log.Println("Removed all clients from TheaterRooms!")
+}
+
+func (hub *TheaterHub) addClientToRoom(client *Client) {
+	hub.clients.SetIfAbsent(client.Id, ClientWithRoom{
+		Id:   client.Id,
+		Room: client.room.GetName(),
+	})
+	ctx := context.Background()
+	clientsKey := fmt.Sprintf("theater:clients:%s", client.room.GetName())
+	exists := redis.Client.SIsMember(ctx, clientsKey, client.Id)
+	if !exists.Val() {
+		redis.Client.SAdd(ctx, clientsKey, client.Id)
+	}
+}
+
+func (hub *TheaterHub) removeClientFromRoom(client *Client) {
+	key := fmt.Sprintf("theater:clients:%s", client.room.GetName())
+	if err := redis.Client.SRem(context.Background(), key, client.Id).Err(); err == nil {
+		hub.clients.Remove(client.Id)
+	}
 }
 
 func (hub *TheaterHub) Close() error {
+	hub.cleanUpClients()
 	return nil
 }
 
@@ -27,7 +59,6 @@ func (hub *TheaterHub) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// Upgrade connection to websocket
 	conn, _, _, err := ws.UpgradeHTTP(req, w)
 	if err != nil {
-		sentry.CaptureException(err)
 		return
 	}
 
@@ -57,7 +88,7 @@ func (hub *TheaterHub) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 
-		room = NewTheaterRoom(theater)
+		room = NewTheaterRoom(hub, theater)
 		room.Join(client)
 		return
 	})
@@ -70,8 +101,8 @@ func (hub *TheaterHub) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 /* Constructor */
 func NewTheaterHub() *TheaterHub {
 	return &TheaterHub{
-		upgrader:       newUpgrader(),
-		VideoPlayers:   cmap.New(),
-		ConcurrentMap:  cmap.New(),
+		upgrader:     newUpgrader(),
+		VideoPlayers: cmap.New(),
+		clients:      cmap.New(),
 	}
 }

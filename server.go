@@ -12,6 +12,9 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
@@ -76,28 +79,27 @@ func main() {
 		theatersHub = hub.NewTheaterHub()
 	)
 
-	defer func() {
-
-		// Close redis
-		if err := redis.Close(); err != nil {
-			mErr := fmt.Errorf("could not close Redis: %v", err)
-			sentry.CaptureException(mErr)
-			log.Println(mErr)
-		}
-
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sig
+		fmt.Printf("Got interrupt Signal. Cleaning up...\n")
 		// Close usersHub
 		if err := usersHub.Close(); err != nil {
 			mErr := fmt.Errorf("could not close UserHub: %v", err)
 			sentry.CaptureException(mErr)
 			log.Println(mErr)
 		}
-
 		// Close theatersHub
 		if err := theatersHub.Close(); err != nil {
 			mErr := fmt.Errorf("could not close TheatersHub: %v", err)
 			sentry.CaptureException(mErr)
 			log.Println(mErr)
 		}
+		os.Exit(1)
+	}()
+
+	defer func() {
 
 		// Close listener
 		if err := userGatewayListener.Close(); err != nil {
@@ -117,6 +119,13 @@ func main() {
 		if ok := sentry.Flush(time.Second * 5); !ok {
 			sentry.CaptureMessage("could not Flush sentry")
 			log.Println("could not Flush sentry")
+		}
+
+		// Close redis
+		if err := redis.Close(); err != nil {
+			mErr := fmt.Errorf("could not close Redis: %v", err)
+			sentry.CaptureException(mErr)
+			log.Println(mErr)
 		}
 
 	}()

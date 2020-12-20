@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/CastyLab/grpc.proto/protocol"
-	cmap "github.com/orcaman/concurrent-map"
 	"log"
 	"net"
 	"strconv"
@@ -33,6 +32,11 @@ type Client struct {
 	room          Room
 	roomType      RoomType
 	pingChan      chan struct{}
+}
+
+type ClientWithRoom struct {
+	Id   string
+	Room string
 }
 
 // Get client authenticated user
@@ -276,38 +280,4 @@ func NewClient(ctx context.Context, conn net.Conn, rType RoomType) *Client {
 		}
 	}
 	return client
-}
-
-type MemberWithClients struct {
-	Clients  cmap.ConcurrentMap
-	User     *proto.User
-}
-
-// Create a new user client with its clients
-func NewMemberWithClients(user *proto.User) *MemberWithClients {
-	return &MemberWithClients{
-		Clients: cmap.New(),
-		User: user,
-	}
-}
-
-func (mc *MemberWithClients) HasClients() bool {
-	return mc.Clients.Count() > 0
-}
-
-func (mc *MemberWithClients) GetClient(id string) *Client {
-	client, _ := mc.Clients.Get(id)
-	return client.(*Client)
-}
-
-func (mc *MemberWithClients) GetClients() cmap.ConcurrentMap {
-	return mc.Clients
-}
-
-func (mc *MemberWithClients) AddClient(client *Client) {
-	mc.Clients.Set(client.Id, client)
-}
-
-func (mc *MemberWithClients) RemoveClient(client *Client) {
-	mc.Clients.Remove(client.Id)
 }

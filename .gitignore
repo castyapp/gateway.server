@@ -6,3 +6,5 @@ Caddyfile
 *.sock
 docker-compose.yml
 config.yml
+server
+docker.config.yml
