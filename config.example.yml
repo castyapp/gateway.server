@@ -7,11 +7,12 @@ grpc:
   port: 55283
 secrets:
   redis:
+    replicaset: true
     masterName: mymaster
     sentinels:
       - "sentinel-0:5000"
       - "sentinel-1:5000"
     pass: a-very-complex-password-here
-    sentinel_password: a-very-complex-password-here
+    sentinel_pass: a-very-complex-password-here
   sentry_dsn: ""
 storage_path: "/.volumes/casty_storage"

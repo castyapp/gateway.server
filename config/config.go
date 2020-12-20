@@ -20,6 +20,8 @@ type ConfMap struct {
 	} `yaml:"grpc"`
 	Secrets struct {
 		Redis struct {
+			Replicaset   bool     `yaml:"replicaset"`
+			Addr         string   `yaml:"addr"`
 			MasterName   string   `yaml:"masterName"`
 			Sentinels    []string `yaml:"sentinels"`
 			Pass         string   `yaml:"pass"`
