@@ -3,13 +3,15 @@ package hub
 import (
 	"context"
 	"fmt"
+	"log"
+	"net/http"
+
 	"github.com/CastyLab/gateway.server/redis"
 	"github.com/CastyLab/grpc.proto/proto"
+	"github.com/getsentry/sentry-go"
 	"github.com/gobwas/ws"
 	"github.com/gorilla/websocket"
 	cmap "github.com/orcaman/concurrent-map"
-	"log"
-	"net/http"
 )
 
 // TheaterHub holds theater rooms
@@ -43,7 +45,10 @@ func (hub *TheaterHub) addClientToRoom(client *Client) {
 
 func (hub *TheaterHub) removeClientFromRoom(client *Client) {
 	key := fmt.Sprintf("theater:clients:%s", client.room.GetName())
-	if err := redis.Client.SRem(context.Background(), key, client.Id).Err(); err == nil {
+	err := redis.Client.SRem(context.Background(), key, client.Id).Err()
+	if err != nil {
+		sentry.CaptureException(err)
+	} else {
 		hub.clients.Remove(client.Id)
 	}
 }

@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"time"
+
 	"github.com/CastyLab/gateway.server/redis"
 	"github.com/CastyLab/grpc.proto/protocol"
 	"github.com/getsentry/sentry-go"
-	"log"
-	"time"
 
 	"github.com/CastyLab/gateway.server/grpc"
 	"github.com/CastyLab/grpc.proto/proto"
@@ -73,13 +74,14 @@ func (room *TheaterRoom) Join(client *Client) {
 
 /* Removes client from room */
 func (room *TheaterRoom) Leave(client *Client) {
+
+	// removing client from redis and Theater's ConcurrentMap
+	room.hub.removeClientFromRoom(client)
+
 	if !client.IsGuest() {
 		// Remove user's activity
 		_ = room.removeUserActivity(client)
 	}
-
-	// removing client from redis and Theater's ConcurrentMap
-	room.hub.removeClientFromRoom(client)
 
 	key := fmt.Sprintf("theater:clients:%s", client.room.GetName())
 	clients := redis.Client.SMembers(context.Background(), key)
@@ -134,9 +136,7 @@ func (room *TheaterRoom) updateUserActivity(client *Client) error {
 // Remove user's activity
 func (room *TheaterRoom) removeUserActivity(client *Client) error {
 	if !client.IsGuest() {
-		_, err := grpc.UserServiceClient.RemoveActivity(context.Background(), &proto.AuthenticateRequest{
-			Token: client.Token(),
-		})
+		_, err := grpc.UserServiceClient.RemoveActivity(context.Background(), &proto.AuthenticateRequest{Token: client.Token()})
 		if err != nil {
 			return err
 		}
@@ -160,7 +160,7 @@ func (room *TheaterRoom) Sync(client *Client) {
 
 	tvp := &proto.TheaterVideoPlayer{
 		CurrentTime: room.vp.CurrentTime(),
-		State: state,
+		State:       state,
 	}
 
 	log.Println("TVP: ", tvp)
@@ -169,7 +169,7 @@ func (room *TheaterRoom) Sync(client *Client) {
 
 }
 
-func (room *TheaterRoom) SendEventToTheaterMembers(ctx context.Context, event []byte)  {
+func (room *TheaterRoom) SendEventToTheaterMembers(ctx context.Context, event []byte) {
 	redis.Client.Publish(ctx, fmt.Sprintf("theater:events:%s", room.theater.Id), event)
 }
 
@@ -268,7 +268,7 @@ func GetTheater(theaterId, token []byte) (*proto.Theater, error) {
 			Token: token,
 		}
 	}
-	mCtx, cancel := context.WithTimeout(context.Background(), 10 * time.Second)
+	mCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	response, err := grpc.TheaterServiceClient.GetTheater(mCtx, req)
 	if err != nil {
