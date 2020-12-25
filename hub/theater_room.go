@@ -244,7 +244,7 @@ func (room *TheaterRoom) HandleEvents(client *Client) error {
 						mCtx := context.Background()
 						chatMessage := new(proto.ChatMsgEvent)
 						if err := event.ReadProtoMsg(chatMessage); err == nil {
-							chatMessage.User = client.GetUser()
+							chatMessage.Sender = client.GetUser()
 							event, err := protocol.NewMsgProtobuf(proto.EMSG_CHAT_MESSAGES, chatMessage)
 							if err == nil {
 								room.SendEventToTheaterMembers(mCtx, event.Bytes())
