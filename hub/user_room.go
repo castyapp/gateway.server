@@ -3,12 +3,13 @@ package hub
 import (
 	"context"
 	"fmt"
+	"log"
+	"time"
+
 	"github.com/CastyLab/gateway.server/redis"
 	"github.com/CastyLab/grpc.proto/protocol"
 	"github.com/getsentry/sentry-go"
 	"github.com/golang/protobuf/ptypes"
-	"log"
-	"time"
 
 	"github.com/CastyLab/gateway.server/grpc"
 	"github.com/CastyLab/grpc.proto/proto"
@@ -16,9 +17,9 @@ import (
 
 /* Has a name, clients, count which holds the actual coutn and index which acts as the unique id */
 type UserRoom struct {
-	hub      *UserHub
-	name     string
-	session  *Session
+	hub     *UserHub
+	name    string
+	session *Session
 }
 
 func (room *UserRoom) GetType() RoomType {
@@ -36,7 +37,7 @@ func (room *UserRoom) GetContext() context.Context {
 func (room *UserRoom) UpdateState(client *Client, state proto.PERSONAL_STATE) {
 	if !client.IsGuest() {
 		_, err := grpc.UserServiceClient.UpdateState(context.Background(), &proto.UpdateStateRequest{
-			State: state,
+			State:       state,
 			AuthRequest: &proto.AuthenticateRequest{Token: client.Token()},
 		})
 		if err != nil {
@@ -171,10 +172,13 @@ func (room *UserRoom) HandleEvents(client *Client) error {
 
 						chatMessage.CreatedAt = ptypes.TimestampNow()
 
-						mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
-						_, err := grpc.MessagesServiceClient.CreateMessage(mCtx, &proto.CreateMessageRequest{
-							RecieverId: chatMessage.To,
-							Content:    string(chatMessage.Message),
+						mCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+						defer cancel()
+						_, err := grpc.MessagesServiceClient.CreateMessage(mCtx, &proto.MessageRequest{
+							Message: &proto.Message{
+								Reciever: chatMessage.Reciever,
+								Content:  string(chatMessage.Message),
+							},
 							AuthRequest: &proto.AuthenticateRequest{
 								Token: client.Token(),
 							},
