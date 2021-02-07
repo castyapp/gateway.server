@@ -160,6 +160,17 @@ func (room *UserRoom) HandleEvents(client *Client) error {
 						}
 					}
 
+				case proto.EMSG_GET_FRIEND_STATE:
+					if client.IsAuthenticated() {
+						protoMessage := new(proto.User)
+						if err := event.ReadProtoMsg(protoMessage); err != nil {
+							log.Println(err)
+							continue
+						}
+
+					}
+					break
+
 				// when user sending a new message
 				case proto.EMSG_NEW_CHAT_MESSAGE:
 					if client.IsAuthenticated() {
