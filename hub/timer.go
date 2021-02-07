@@ -1,7 +1,6 @@
 package hub
 
 import (
-	"log"
 	"time"
 )
 
@@ -27,7 +26,7 @@ func (t *Timer) Listen() {
 						case <-t.ticker.C:
 							newVal := t.ct + 1
 							t.ct = newVal
-							log.Println(newVal)
+							//log.Println(newVal)
 							go func() {
 								t.sendC <- newVal
 							}()
