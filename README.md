@@ -87,7 +87,7 @@ $ go build -o server .
 ```bash
 $ docker build . --tag=casty.gateway
 
-$ docker run -dp --restart=always 3000:3000 casty.gateway
+$ docker run -d --restart=always -p 3001:3001 -p 3002:3002 casty.gateway
 ```
 
 ## Contributing
