@@ -2,10 +2,11 @@ package grpc
 
 import (
 	"fmt"
-	"github.com/CastyLab/gateway.server/config"
-	"github.com/CastyLab/grpc.proto/proto"
-	"google.golang.org/grpc"
 	"log"
+
+	"github.com/castyapp/gateway.server/config"
+	"github.com/castyapp/libcasty-protocol-go/proto"
+	"google.golang.org/grpc"
 )
 
 var (
@@ -26,7 +27,7 @@ func Configure() error {
 		log.Fatal(err)
 	}
 
-	UserServiceClient    = proto.NewUserServiceClient(conn)
+	UserServiceClient = proto.NewUserServiceClient(conn)
 	TheaterServiceClient = proto.NewTheaterServiceClient(conn)
 	MessagesServiceClient = proto.NewMessagesServiceClient(conn)
 	return nil

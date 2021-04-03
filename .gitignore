@@ -1,10 +1,3 @@
-.idea
-.env
-.DS_Store
-Caddyfile
 /client
 *.sock
-docker-compose.yml
-config.yml
-server
-docker.config.yml
+config.hcl
