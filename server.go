@@ -3,12 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/CastyLab/gateway.server/config"
-	"github.com/CastyLab/gateway.server/grpc"
-	"github.com/CastyLab/gateway.server/hub"
-	"github.com/CastyLab/gateway.server/redis"
-	"github.com/getsentry/sentry-go"
-	"github.com/gorilla/mux"
 	"log"
 	"net"
 	"net/http"
@@ -16,6 +10,13 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/castyapp/gateway.server/config"
+	"github.com/castyapp/gateway.server/grpc"
+	"github.com/castyapp/gateway.server/hub"
+	"github.com/castyapp/gateway.server/redis"
+	"github.com/getsentry/sentry-go"
+	"github.com/gorilla/mux"
 )
 
 var (
@@ -35,13 +36,13 @@ func init() {
 	theaterGatewayPort = flag.Int("tg-port", 3002, "TheaterGateway server port")
 	theaterGatewayHost = flag.String("tg-host", "0.0.0.0", "TheaterGateway server host")
 
-	env  = flag.String("env", "development", "Environment")
-	configFileName := flag.String("config-file", "config.yml", "config.yaml file")
+	env = flag.String("env", "development", "Environment")
+	configFileName := flag.String("config-file", "config.hcl", "config.hcl file")
 
 	flag.Parse()
 	log.Printf("Loading ConfigMap from file: [%s]", *configFileName)
 
-	if err := config.Load(*configFileName); err != nil {
+	if err := config.LoadFile(*configFileName); err != nil {
 		log.Fatal(fmt.Errorf("could not load config: %v", err))
 	}
 
@@ -53,8 +54,10 @@ func init() {
 		log.Fatal(fmt.Errorf("could not configure redis: %v", err))
 	}
 
-	if err := sentry.Init(sentry.ClientOptions{ Dsn: config.Map.Secrets.SentryDsn }); err != nil {
-		log.Fatal(fmt.Errorf("could not initilize sentry: %v", err))
+	if config.Map.Sentry.Enabled {
+		if err := sentry.Init(sentry.ClientOptions{Dsn: config.Map.Sentry.Dsn}); err != nil {
+			log.Fatal(fmt.Errorf("could not initilize sentry: %v", err))
+		}
 	}
 }
 

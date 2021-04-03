@@ -18,7 +18,10 @@ jobs:
     steps:
       - name: Check out the repo
         uses: actions/checkout@v2
-            
+
+      - name: Run tests
+        run: go test ./tests -race
+
       - name: Set up Docker Buildx
         uses: crazy-max/ghaction-docker-buildx@v2
         with:
@@ -46,4 +49,3 @@ jobs:
           --tag ${{ steps.prepare.outputs.docker_image }}:${{ steps.prepare.outputs.release_version }} \
           --file ./Dockerfile \
           --output type=image,push=true .
-

@@ -1,20 +1,20 @@
 package hub
 
-import "github.com/CastyLab/grpc.proto/proto"
+import "github.com/castyapp/libcasty-protocol-go/proto"
 
 type VideoPlayer struct {
-	t *Timer
+	t       *Timer
 	Theater *proto.Theater
 }
 
 func NewVideoPlayer() *VideoPlayer {
 	timer := &Timer{
-		sendC: make(chan float32),
+		sendC:     make(chan float32),
 		startChan: make(chan struct{}),
 		closeChan: make(chan struct{}),
 	}
 	go timer.Listen()
-	return &VideoPlayer{ t: timer }
+	return &VideoPlayer{t: timer}
 }
 
 func (vp *VideoPlayer) InProgress() bool {
@@ -37,14 +37,14 @@ func (vp *VideoPlayer) CurrentTimeChan() <-chan float32 {
 	return vp.t.sendC
 }
 
-func (vp *VideoPlayer) Play()  {
+func (vp *VideoPlayer) Play() {
 	go vp.t.start()
 }
 
-func (vp *VideoPlayer) Pause()  {
+func (vp *VideoPlayer) Pause() {
 	vp.t.pause()
 }
 
-func (vp *VideoPlayer) End()  {
+func (vp *VideoPlayer) End() {
 	vp.t.end()
 }

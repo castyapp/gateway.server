@@ -3,14 +3,15 @@ package hub
 import (
 	"context"
 	"fmt"
-	"github.com/CastyLab/grpc.proto/protocol"
 	"log"
 	"net"
 	"strconv"
 	"time"
 
-	"github.com/CastyLab/gateway.server/grpc"
-	"github.com/CastyLab/grpc.proto/proto"
+	"github.com/castyapp/libcasty-protocol-go/protocol"
+
+	"github.com/castyapp/gateway.server/grpc"
+	"github.com/castyapp/libcasty-protocol-go/proto"
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
 	pb "github.com/golang/protobuf/proto"
@@ -212,7 +213,7 @@ func (c *Client) authenticate(packet *protocol.Packet) error {
 
 	if !c.IsAuthenticated() {
 
-		mCtx, _ := context.WithTimeout(context.Background(), 10 * time.Second)
+		mCtx, _ := context.WithTimeout(context.Background(), 10*time.Second)
 		response, err := grpc.UserServiceClient.GetUser(mCtx, &proto.AuthenticateRequest{
 			Token: token,
 		})

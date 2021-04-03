@@ -3,13 +3,14 @@ package hub
 import (
 	"context"
 	"fmt"
-	"github.com/CastyLab/gateway.server/redis"
-	"github.com/CastyLab/grpc.proto/proto"
+	"log"
+	"net/http"
+
+	"github.com/castyapp/gateway.server/redis"
+	"github.com/castyapp/libcasty-protocol-go/proto"
 	"github.com/gobwas/ws"
 	"github.com/gorilla/websocket"
 	cmap "github.com/orcaman/concurrent-map"
-	"log"
-	"net/http"
 )
 
 /* Controls a bunch of rooms */
@@ -18,7 +19,7 @@ type UserHub struct {
 	upgrader websocket.Upgrader
 }
 
-func SendEventToUser(ctx context.Context, event []byte, user *proto.User)  {
+func SendEventToUser(ctx context.Context, event []byte, user *proto.User) {
 	redis.Client.Publish(ctx, fmt.Sprintf("user:events:%s", user.Id), event)
 }
 

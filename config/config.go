@@ -1,47 +1,56 @@
 package config
 
 import (
-	"fmt"
-	"log"
-	"os"
+	"io/ioutil"
 
-	"gopkg.in/yaml.v2"
+	"github.com/hashicorp/hcl"
 )
 
 type ConfMap struct {
-	App struct {
-		Version string `yaml:"version"`
-		Debug   bool   `yaml:"debug"`
-		Env     string `yaml:"env"`
-	} `yaml:"app"`
-	Grpc struct {
-		Host string `yaml:"host"`
-		Port int    `yaml:"port"`
-	} `yaml:"grpc"`
-	Secrets struct {
-		Redis struct {
-			Replicaset   bool     `yaml:"replicaset"`
-			Addr         string   `yaml:"addr"`
-			MasterName   string   `yaml:"masterName"`
-			Sentinels    []string `yaml:"sentinels"`
-			Pass         string   `yaml:"pass"`
-			SentinelPass string   `yaml:"sentinel_pass"`
-		} `yaml:"redis"`
-		SentryDsn string `yaml:"sentry_dsn"`
-	} `yaml:"secrets"`
-	StoragePath string `yaml:"storage_path"`
+	Debug  bool         `hcl:"debug"`
+	Env    string       `hcl:"env"`
+	Grpc   GrpcConfig   `hcl:"grpc,block"`
+	Redis  RedisConfig  `hcl:"redis,block"`
+	Sentry SentryConfig `hcl:"sentry,block"`
+}
+
+type SentryConfig struct {
+	Enabled bool   `hcl:"enabled"`
+	Dsn     string `hcl:"dsn"`
+}
+
+type RedisConfig struct {
+	Cluster      bool     `hcl:"cluster"`
+	MasterName   string   `hcl:"master_name"`
+	Addr         string   `hcl:"addr"`
+	Sentinels    []string `hcl:"sentinels"`
+	Pass         string   `hcl:"pass"`
+	SentinelPass string   `hcl:"sentinel_pass"`
+}
+
+type GrpcConfig struct {
+	Host string `hcl:"host"`
+	Port int    `hcl:"port"`
 }
 
 var Map = new(ConfMap)
 
-func Load(filename string) error {
-	file, err := os.Open(filename)
+func LoadFile(filename string) (err error) {
+
+	d, err := ioutil.ReadFile(filename)
 	if err != nil {
-		return fmt.Errorf("could not open config file: %v", err)
+		return err
 	}
-	if err := yaml.NewDecoder(file).Decode(&Map); err != nil {
-		return fmt.Errorf("could not decode config file: %v", err)
+
+	obj, err := hcl.Parse(string(d))
+	if err != nil {
+		return err
 	}
-	log.Printf("ConfigMap Loaded: [version: %s]", Map.App.Version)
-	return nil
+
+	// Build up the result
+	if err := hcl.DecodeObject(&Map, obj); err != nil {
+		return err
+	}
+
+	return
 }

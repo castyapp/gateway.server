@@ -6,13 +6,13 @@ import (
 	"log"
 	"time"
 
-	"github.com/CastyLab/gateway.server/redis"
-	"github.com/CastyLab/grpc.proto/protocol"
+	"github.com/castyapp/gateway.server/redis"
+	"github.com/castyapp/libcasty-protocol-go/protocol"
 	"github.com/getsentry/sentry-go"
 	"github.com/golang/protobuf/ptypes"
 
-	"github.com/CastyLab/gateway.server/grpc"
-	"github.com/CastyLab/grpc.proto/proto"
+	"github.com/castyapp/gateway.server/grpc"
+	"github.com/castyapp/libcasty-protocol-go/proto"
 )
 
 /* Has a name, clients, count which holds the actual coutn and index which acts as the unique id */
