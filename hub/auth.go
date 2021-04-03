@@ -1,7 +1,7 @@
 package hub
 
 import (
-	"github.com/CastyLab/grpc.proto/proto"
+	"github.com/castyapp/libcasty-protocol-go/proto"
 	pb "github.com/golang/protobuf/proto"
 )
 

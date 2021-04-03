@@ -6,8 +6,8 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/CastyLab/gateway.server/redis"
-	"github.com/CastyLab/grpc.proto/proto"
+	"github.com/castyapp/gateway.server/redis"
+	"github.com/castyapp/libcasty-protocol-go/proto"
 	"github.com/getsentry/sentry-go"
 	"github.com/gobwas/ws"
 	"github.com/gorilla/websocket"
